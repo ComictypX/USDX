@@ -219,6 +219,7 @@ type
       SingTimebarMode:       integer;
       JukeboxTimebarMode:    integer;
       DefaultSingMode:       integer;
+      AutoRefreshSongs:      integer;
 
       // Controller
       Joypad:         integer;
@@ -462,6 +463,8 @@ const
   ISingTimebarMode:    array[0..2] of UTF8String = ('Current', 'Remaining', 'Total');
   IJukeboxTimebarMode: array[0..2] of UTF8String = ('Current', 'Remaining', 'Total');
 
+  IAutoRefreshSongs:   array[0..1] of UTF8String = ('Off', 'On');
+
   // Recording options
   IChannelPlayer: array[0..6] of UTF8String = ('Off', '1', '2', '3', '4', '5', '6');
   IMicBoost:      array[0..3] of UTF8String = ('Off', '+6dB', '+12dB', '+18dB');
@@ -561,6 +564,8 @@ var
 
   ISingTimebarModeTranslated:      array[0..2] of UTF8String = ('Current', 'Remaining', 'Total');
   IJukeboxTimebarModeTranslated:      array[0..2] of UTF8String = ('Current', 'Remaining', 'Total');
+
+  IAutoRefreshSongsTranslated:     array[0..1] of UTF8String = ('Off', 'On');
 
   // Recording options
   IChannelPlayerTranslated:    array[0..IMaxPlayerCount] of UTF8String = ('Off', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12');
@@ -867,6 +872,9 @@ begin
   IJukeboxTimebarModeTranslated[0]          := ULanguage.Language.Translate('OPTION_VALUE_CURRENT');
   IJukeboxTimebarModeTranslated[1]          := ULanguage.Language.Translate('OPTION_VALUE_REMAINING');
   IJukeboxTimebarModeTranslated[2]          := ULanguage.Language.Translate('OPTION_VALUE_TOTAL');
+
+  IAutoRefreshSongsTranslated[0]      := ULanguage.Language.Translate('OPTION_VALUE_OFF');
+  IAutoRefreshSongsTranslated[1]      := ULanguage.Language.Translate('OPTION_VALUE_ON');
 
   IAudioOutputBufferSizeTranslated[0] := ULanguage.Language.Translate('OPTION_VALUE_AUTO');
   IAudioOutputBufferSizeTranslated[1] := '256';
@@ -1645,6 +1653,9 @@ begin
   // JukeboxTimebarMode
   JukeboxTimebarMode := ReadArrayIndex(IJukeboxTimebarMode, IniFile, 'Advanced', 'JukeboxTimebarMode', IGNORE_INDEX, 'Current');
 
+  // AutoRefreshSongs
+  AutoRefreshSongs := ReadArrayIndex(IAutoRefreshSongs, IniFile, 'Advanced', 'AutoRefreshSongs', 0);
+
   // WebCam
   WebCamID := IniFile.ReadInteger('Webcam', 'ID', 0);
   WebCamResolution := ReadArrayIndex(IWebcamResolution, IniFile, 'Webcam', 'Resolution', IGNORE_INDEX, '320x240');
@@ -1960,6 +1971,9 @@ begin
 
     // JukeboxTimebarMode
     IniFile.WriteString('Advanced', 'JukeboxTimebarMode', IJukeboxTimebarMode[JukeboxTimebarMode]);
+
+    // AutoRefreshSongs
+    IniFile.WriteString('Advanced', 'AutoRefreshSongs', IAutoRefreshSongs[AutoRefreshSongs]);
 
     // Directories (add a template if section is missing)
     // Note: Value must be ' ' and not '', otherwise no key is generated on Linux

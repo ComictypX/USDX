@@ -90,6 +90,11 @@ type
 
   TPathDynArray = array of IPath;
 
+  TPathScanInfo = record
+    Path: IPath;
+    LastCheck: LongInt;
+  end;
+
   {$IFDEF USE_PSEUDO_THREAD}
   TSongs = class(TPseudoThread)
   {$ELSE}
@@ -98,8 +103,11 @@ type
   private
     fParseSongDirectory: boolean;
     fProcessing:         boolean;
+    fLastScanTime: array of TPathScanInfo;
     procedure int_LoadSongList;
     procedure DoDirChanged(Sender: TObject);
+    function CheckForChanges(): boolean;
+    procedure IncrementalUpdate();
   protected
     procedure Execute; override;
   public
@@ -164,6 +172,7 @@ implementation
 
 uses
   StrUtils,
+  SyncObjs,
   UCovers,
   UFiles,
   UGraphic,
@@ -180,6 +189,7 @@ begin
   Self.FreeOnTerminate := true;
 
   SongList           := TList.Create();
+  SetLength(fLastScanTime, 0);
 
   // until it is fixed, simply load the song-list
   int_LoadSongList();
@@ -188,6 +198,7 @@ end;
 destructor TSongs.Destroy();
 begin
   FreeAndNil(SongList);
+  SetLength(fLastScanTime, 0);
 
   inherited;
 end;
@@ -198,11 +209,16 @@ begin
 end;
 
 procedure TSongs.Execute();
+var
+  LoopCounter: LongInt;
+const
+  CHECK_INTERVAL = 30; // seconds
 begin
 {$IFDEF USE_PSEUDO_THREAD}
   int_LoadSongList();
 {$ELSE}
   fParseSongDirectory := true;
+  LoopCounter := 0;
 
   while not terminated do
   begin
@@ -211,9 +227,26 @@ begin
     begin
       Log.LogStatus('Calling int_LoadSongList', 'TSongs.Execute');
       int_LoadSongList();
+      LoopCounter := 0; // Reset counter after full reload
     end;
 
-    Suspend();
+    // Auto-refresh check (if enabled)
+    if (Ini.AutoRefreshSongs = 1) and not fParseSongDirectory then
+    begin
+      Inc(LoopCounter);
+      if LoopCounter >= CHECK_INTERVAL then
+      begin
+        if CheckForChanges() then
+        begin
+          Log.LogStatus('Changes detected, updating song list', 'TSongs.Execute');
+          IncrementalUpdate();
+        end;
+        LoopCounter := 0;
+      end;
+    end;
+
+    Sleep(1000); // Sleep 1 second instead of Suspend for better control
+  end;
   end;
 {$ENDIF}
 end;
@@ -326,6 +359,179 @@ begin
   end;
 
   SetLength(Files, 0);
+end;
+
+function TSongs.CheckForChanges(): boolean;
+var
+  I, J: integer;
+  CurrentTime: LongInt;
+  DirPath: IPath;
+  DirChanged: boolean;
+begin
+  Result := false;
+  
+  // Initialize LastScanTime array if empty
+  if Length(fLastScanTime) = 0 then
+  begin
+    SetLength(fLastScanTime, SongPaths.Count);
+    for I := 0 to SongPaths.Count - 1 do
+    begin
+      fLastScanTime[I].Path := SongPaths[I] as IPath;
+      fLastScanTime[I].LastCheck := 0;
+    end;
+    Result := true; // First time, consider as changed
+    Exit;
+  end;
+  
+  // Check each song path for changes
+  for I := 0 to SongPaths.Count - 1 do
+  begin
+    DirPath := SongPaths[I] as IPath;
+    DirChanged := false;
+    
+    // Find the corresponding entry in LastScanTime
+    J := -1;
+    for J := 0 to High(fLastScanTime) do
+    begin
+      if fLastScanTime[J].Path.Equals(DirPath) then
+        Break;
+    end;
+    
+    // Check if directory has been modified
+    if FileExists(DirPath.ToNative) then
+    begin
+      CurrentTime := FileAge(DirPath.ToNative);
+      if (J >= 0) and (J <= High(fLastScanTime)) then
+      begin
+        if (fLastScanTime[J].LastCheck = 0) or (CurrentTime > fLastScanTime[J].LastCheck) then
+        begin
+          DirChanged := true;
+          Result := true;
+        end;
+      end
+      else
+      begin
+        // New path
+        DirChanged := true;
+        Result := true;
+      end;
+    end;
+  end;
+end;
+
+procedure TSongs.IncrementalUpdate();
+var
+  I, J: integer;
+  Files: TPathDynArray;
+  Extension: IPath;
+  Song: TSong;
+  SongPath: IPath;
+  Found: boolean;
+  SongsToRemove: TList;
+  CurrentTime: LongInt;
+begin
+  Log.LogStatus('Starting incremental song update', 'TSongs.IncrementalUpdate');
+  
+  try
+    fProcessing := true;
+    SongsToRemove := TList.Create;
+    
+    try
+      Extension := Path('.txt');
+      
+      // Step 1: Check for new and modified songs
+      for I := 0 to SongPaths.Count - 1 do
+      begin
+        SetLength(Files, 0);
+        FindFilesByExtension(SongPaths[I] as IPath, Extension, true, Files);
+        
+        for J := 0 to High(Files) do
+        begin
+          // Check if song already exists in list
+          Found := false;
+          for Song in SongList do
+          begin
+            SongPath := TSong(Song).Path.Append(TSong(Song).FileName);
+            if SongPath.Equals(Files[J]) then
+            begin
+              // Song exists, check if it was modified
+              CurrentTime := FileAge(Files[J].ToNative);
+              // We don't have FileAge stored, so just skip modification check for now
+              // The song is already loaded, no need to reload
+              Found := true;
+              Break;
+            end;
+          end;
+          
+          // Add new song if not found
+          if not Found then
+          begin
+            Log.LogStatus('Adding new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
+            Song := TSong.Create(Files[J]);
+            if Song.Analyse then
+              SongList.Add(Song)
+            else
+            begin
+              Log.LogError('Failed to analyse new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
+              FreeAndNil(Song);
+            end;
+          end;
+        end;
+      end;
+      
+      // Step 2: Check for deleted songs
+      for Song in SongList do
+      begin
+        SongPath := TSong(Song).Path.Append(TSong(Song).FileName);
+        if not FileExists(SongPath.ToNative) then
+        begin
+          Log.LogStatus('Song deleted: ' + SongPath.ToNative, 'TSongs.IncrementalUpdate');
+          SongsToRemove.Add(Song);
+        end;
+      end;
+      
+      // Remove deleted songs
+      for I := 0 to SongsToRemove.Count - 1 do
+      begin
+        Song := TSong(SongsToRemove[I]);
+        SongList.Remove(Song);
+        FreeAndNil(Song);
+      end;
+      
+      // Step 3: Update scan times
+      SetLength(fLastScanTime, SongPaths.Count);
+      for I := 0 to SongPaths.Count - 1 do
+      begin
+        fLastScanTime[I].Path := SongPaths[I] as IPath;
+        CurrentTime := FileAge((SongPaths[I] as IPath).ToNative);
+        if CurrentTime > 0 then
+          fLastScanTime[I].LastCheck := CurrentTime
+        else
+          fLastScanTime[I].LastCheck := FileAge(Ini.Filename.ToNative); // Use current time as fallback
+      end;
+      
+      // Step 4: Refresh UI
+      if assigned(CatSongs) then
+        CatSongs.Refresh;
+      
+      if assigned(CatCovers) then
+        CatCovers.Load;
+      
+      if assigned(ScreenSong) then
+      begin
+        ScreenSong.GenerateThumbnails();
+        ScreenSong.OnShow;
+      end;
+      
+      Log.LogStatus('Incremental update complete', 'TSongs.IncrementalUpdate');
+      
+    finally
+      FreeAndNil(SongsToRemove);
+    end;
+    
+  finally
+    fProcessing := false;
+  end;
 end;
 
 (*

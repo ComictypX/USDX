@@ -90,11 +90,6 @@ type
 
   TPathDynArray = array of IPath;
 
-  TPathScanInfo = record
-    Path: IPath;
-    LastCheck: LongInt;
-  end;
-
   {$IFDEF USE_PSEUDO_THREAD}
   TSongs = class(TPseudoThread)
   {$ELSE}
@@ -103,7 +98,6 @@ type
   private
     fParseSongDirectory: boolean;
     fProcessing:         boolean;
-    fLastScanTime: array of TPathScanInfo;
     procedure int_LoadSongList;
     procedure DoDirChanged(Sender: TObject);
     function CheckForChanges(): boolean;
@@ -189,7 +183,6 @@ begin
   Self.FreeOnTerminate := true;
 
   SongList           := TList.Create();
-  SetLength(fLastScanTime, 0);
 
   // until it is fixed, simply load the song-list
   int_LoadSongList();
@@ -198,7 +191,6 @@ end;
 destructor TSongs.Destroy();
 begin
   FreeAndNil(SongList);
-  SetLength(fLastScanTime, 0);
 
   inherited;
 end;
@@ -362,66 +354,15 @@ begin
 end;
 
 function TSongs.CheckForChanges(): boolean;
-var
-  I, J: integer;
-  CurrentTime: LongInt;
-  DirPath: IPath;
-  DirChanged: boolean;
 begin
-  Result := false;
-  
-  // Initialize LastScanTime array if empty
-  if Length(fLastScanTime) = 0 then
-  begin
-    SetLength(fLastScanTime, SongPaths.Count);
-    for I := 0 to SongPaths.Count - 1 do
-    begin
-      fLastScanTime[I].Path := SongPaths[I] as IPath;
-      fLastScanTime[I].LastCheck := 0;
-    end;
-    Result := true; // First time, consider as changed
-    Exit;
-  end;
-  
-  // Check each song path for changes
-  for I := 0 to SongPaths.Count - 1 do
-  begin
-    DirPath := SongPaths[I] as IPath;
-    DirChanged := false;
-    
-    // Find the corresponding entry in LastScanTime
-    J := -1;
-    for J := 0 to High(fLastScanTime) do
-    begin
-      if fLastScanTime[J].Path.Equals(DirPath) then
-        Break;
-    end;
-    
-    // Check if directory has been modified
-    if FileExists(DirPath.ToNative) then
-    begin
-      CurrentTime := FileAge(DirPath.ToNative);
-      if (J >= 0) and (J <= High(fLastScanTime)) then
-      begin
-        if (fLastScanTime[J].LastCheck = 0) or (CurrentTime > fLastScanTime[J].LastCheck) then
-        begin
-          DirChanged := true;
-          Result := true;
-        end;
-      end
-      else
-      begin
-        // New path
-        DirChanged := true;
-        Result := true;
-      end;
-    end;
-  end;
+  // Always return true to trigger incremental update check
+  // IncrementalUpdate will efficiently detect what actually changed
+  Result := true;
 end;
 
 procedure TSongs.IncrementalUpdate();
 var
-  I, J: integer;
+  I, J, K: integer;
   Files: TPathDynArray;
   Extension: IPath;
   Song: TSong;
@@ -449,9 +390,10 @@ begin
         begin
           // Check if song already exists in list
           Found := false;
-          for Song in SongList do
+          for K := 0 to SongList.Count - 1 do
           begin
-            SongPath := TSong(Song).Path.Append(TSong(Song).FileName);
+            Song := TSong(SongList[K]);
+            SongPath := Song.Path.Append(Song.FileName);
             if SongPath.Equals(Files[J]) then
             begin
               // Song exists, check if it was modified
@@ -480,9 +422,10 @@ begin
       end;
       
       // Step 2: Check for deleted songs
-      for Song in SongList do
+      for K := 0 to SongList.Count - 1 do
       begin
-        SongPath := TSong(Song).Path.Append(TSong(Song).FileName);
+        Song := TSong(SongList[K]);
+        SongPath := Song.Path.Append(Song.FileName);
         if not FileExists(SongPath.ToNative) then
         begin
           Log.LogStatus('Song deleted: ' + SongPath.ToNative, 'TSongs.IncrementalUpdate');
@@ -498,19 +441,7 @@ begin
         FreeAndNil(Song);
       end;
       
-      // Step 3: Update scan times
-      SetLength(fLastScanTime, SongPaths.Count);
-      for I := 0 to SongPaths.Count - 1 do
-      begin
-        fLastScanTime[I].Path := SongPaths[I] as IPath;
-        CurrentTime := FileAge((SongPaths[I] as IPath).ToNative);
-        if CurrentTime > 0 then
-          fLastScanTime[I].LastCheck := CurrentTime
-        else
-          fLastScanTime[I].LastCheck := FileAge(Ini.Filename.ToNative); // Use current time as fallback
-      end;
-      
-      // Step 4: Refresh UI
+      // Step 3: Refresh UI
       if assigned(CatSongs) then
         CatSongs.Refresh;
       

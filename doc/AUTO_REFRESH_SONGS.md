@@ -71,6 +71,13 @@ The monitoring runs in a background thread and is designed to be safe:
 - Integrates into the existing `TSongs.Execute()` thread loop
 - Uses `FindFilesByExtension()` for consistent file scanning
 
+**Platform Limitations:**
+- **macOS Debug Builds**: The feature does not work when `USE_PSEUDO_THREAD` is defined (macOS debug mode)
+- **Windows/Linux**: Full support
+- **macOS Release**: Full support
+
+The monitoring requires a real thread loop, which is not available in pseudo-thread mode used for macOS debugging.
+
 ### Code References
 - `src/base/UIni.pas` - Configuration option
 - `src/base/USongs.pas` - Monitoring logic
@@ -84,6 +91,15 @@ The monitoring runs in a background thread and is designed to be safe:
 - Verify the song files have `.txt` extension
 - Ensure files are in a configured song directory
 - Wait at least 30 seconds for the next scan cycle
+
+### Feature not working on macOS (Debug builds)
+**Important Limitation:** The auto-refresh feature currently does **not work** on macOS when running debug builds. This is due to the use of pseudo-threads on macOS debug mode, which don't support the background monitoring loop.
+
+**Workaround:** 
+- Use a release build on macOS for auto-refresh functionality
+- Or restart the game to see song library changes
+
+This limitation affects only macOS debug builds; Windows, Linux, and macOS release builds work as expected.
 
 ### Performance issues
 - If you have a very large song library (5000+ songs), consider keeping auto-refresh **Off**

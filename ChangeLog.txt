@@ -17,6 +17,8 @@ Ultrastar Deluxe 1.3.2 Beta - 2016-08-05
 - lots more
 
 WIP
+---
+add: automatic song folder monitoring - detects new/changed/deleted songs without restarting (configurable in Advanced settings)
 
 
 Ultrastar Deluxe 1.1

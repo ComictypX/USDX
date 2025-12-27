@@ -223,7 +223,7 @@ begin
     end;
 
     // Auto-refresh check (if enabled)
-    if (Ini.AutoRefreshSongs = 1) and not fParseSongDirectory then
+    if (Ini.AutoRefreshSongs = 1) and not fParseSongDirectory and not fProcessing then
     begin
       Inc(LoopCounter);
       if LoopCounter >= CHECK_INTERVAL then
@@ -238,7 +238,6 @@ begin
     end;
 
     Sleep(1000); // Sleep 1 second instead of Suspend for better control
-  end;
   end;
 {$ENDIF}
 end;
@@ -369,7 +368,6 @@ var
   SongPath: IPath;
   Found: boolean;
   SongsToRemove: TList;
-  CurrentTime: LongInt;
 begin
   Log.LogStatus('Starting incremental song update', 'TSongs.IncrementalUpdate');
   
@@ -396,10 +394,7 @@ begin
             SongPath := Song.Path.Append(Song.FileName);
             if SongPath.Equals(Files[J]) then
             begin
-              // Song exists, check if it was modified
-              CurrentTime := FileAge(Files[J].ToNative);
-              // We don't have FileAge stored, so just skip modification check for now
-              // The song is already loaded, no need to reload
+              // Song exists - already loaded, no need to reload
               Found := true;
               Break;
             end;

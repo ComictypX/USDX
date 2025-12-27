@@ -368,12 +368,14 @@ var
   SongPath: IPath;
   Found: boolean;
   SongsToRemove: TList;
+  ChangesDetected: boolean;
 begin
   Log.LogStatus('Starting incremental song update', 'TSongs.IncrementalUpdate');
   
   try
     fProcessing := true;
     SongsToRemove := TList.Create;
+    ChangesDetected := false;
     
     try
       Extension := Path('.txt');
@@ -406,7 +408,10 @@ begin
             Log.LogStatus('Adding new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
             Song := TSong.Create(Files[J]);
             if Song.Analyse then
-              SongList.Add(Song)
+            begin
+              SongList.Add(Song);
+              ChangesDetected := true;
+            end
             else
             begin
               Log.LogError('Failed to analyse new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
@@ -425,6 +430,7 @@ begin
         begin
           Log.LogStatus('Song deleted: ' + SongPath.ToNative, 'TSongs.IncrementalUpdate');
           SongsToRemove.Add(Song);
+          ChangesDetected := true;
         end;
       end;
       
@@ -436,20 +442,27 @@ begin
         FreeAndNil(Song);
       end;
       
-      // Step 3: Refresh UI
-      if assigned(CatSongs) then
-        CatSongs.Refresh;
-      
-      if assigned(CatCovers) then
-        CatCovers.Load;
-      
-      if assigned(ScreenSong) then
+      // Step 3: Refresh UI only if changes were detected
+      if ChangesDetected then
       begin
-        ScreenSong.GenerateThumbnails();
-        ScreenSong.OnShow;
-      end;
-      
-      Log.LogStatus('Incremental update complete', 'TSongs.IncrementalUpdate');
+        Log.LogStatus('Changes detected, refreshing UI', 'TSongs.IncrementalUpdate');
+        
+        if assigned(CatSongs) then
+          CatSongs.Refresh;
+        
+        if assigned(CatCovers) then
+          CatCovers.Load;
+        
+        if assigned(ScreenSong) then
+        begin
+          ScreenSong.GenerateThumbnails();
+          ScreenSong.OnShow;
+        end;
+        
+        Log.LogStatus('Incremental update complete - changes applied', 'TSongs.IncrementalUpdate');
+      end
+      else
+        Log.LogDebug('Incremental update complete - no changes', 'TSongs.IncrementalUpdate');
       
     finally
       FreeAndNil(SongsToRemove);

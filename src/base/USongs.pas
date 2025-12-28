@@ -184,13 +184,13 @@ begin
 
   SongList           := TList.Create();
 
-  // Load initial song list
+{$IFDEF USE_PSEUDO_THREAD}
+  // For pseudo threads, load songs directly since Execute won't run continuously
   int_LoadSongList();
-  
-  // Start the monitoring thread for auto-refresh functionality
-  {$IFNDEF USE_PSEUDO_THREAD}
+{$ELSE}
+  // For real threads, start the monitoring thread which will load songs and monitor for changes
   Resume();
-  {$ENDIF}
+{$ENDIF}
 end;
 
 destructor TSongs.Destroy();

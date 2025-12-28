@@ -180,7 +180,7 @@ constructor TSongs.Create();
 begin
   // do not start thread BEFORE initialization (suspended = true)
   inherited Create(true);
-  Self.FreeOnTerminate := true;
+  Self.FreeOnTerminate := false;
 
   SongList           := TList.Create();
 
@@ -196,9 +196,9 @@ end;
 destructor TSongs.Destroy();
 begin
   {$IFNDEF USE_PSEUDO_THREAD}
-  // Signal the thread to terminate
+  // Signal the thread to terminate and wait for it to finish
   Terminate;
-  // Don't wait for thread as FreeOnTerminate is true
+  WaitFor;
   {$ENDIF}
   
   FreeAndNil(SongList);

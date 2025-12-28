@@ -100,6 +100,8 @@ type
     fProcessing:         boolean;
     procedure int_LoadSongList;
     procedure DoDirChanged(Sender: TObject);
+    function CheckForChanges(): boolean;
+    procedure IncrementalUpdate();
   protected
     procedure Execute; override;
   public
@@ -164,6 +166,7 @@ implementation
 
 uses
   StrUtils,
+  SyncObjs,
   UCovers,
   UFiles,
   UGraphic,
@@ -198,11 +201,16 @@ begin
 end;
 
 procedure TSongs.Execute();
+var
+  LoopCounter: LongInt;
+const
+  CHECK_INTERVAL = 5; // seconds
 begin
 {$IFDEF USE_PSEUDO_THREAD}
   int_LoadSongList();
 {$ELSE}
   fParseSongDirectory := true;
+  LoopCounter := 0;
 
   while not terminated do
   begin
@@ -211,9 +219,25 @@ begin
     begin
       Log.LogStatus('Calling int_LoadSongList', 'TSongs.Execute');
       int_LoadSongList();
+      LoopCounter := 0; // Reset counter after full reload
     end;
 
-    Suspend();
+    // Auto-refresh check (if enabled)
+    if (Ini.AutoRefreshSongs = 1) and not fParseSongDirectory and not fProcessing then
+    begin
+      Inc(LoopCounter);
+      if LoopCounter >= CHECK_INTERVAL then
+      begin
+        if CheckForChanges() then
+        begin
+          Log.LogStatus('Changes detected, updating song list', 'TSongs.Execute');
+          IncrementalUpdate();
+        end;
+        LoopCounter := 0;
+      end;
+    end;
+
+    Sleep(1000); // Sleep 1 second instead of Suspend for better control
   end;
 {$ENDIF}
 end;
@@ -326,6 +350,127 @@ begin
   end;
 
   SetLength(Files, 0);
+end;
+
+function TSongs.CheckForChanges(): boolean;
+begin
+  // Always return true to trigger incremental update check
+  // IncrementalUpdate will efficiently detect what actually changed
+  Result := true;
+end;
+
+procedure TSongs.IncrementalUpdate();
+var
+  I, J, K: integer;
+  Files: TPathDynArray;
+  Extension: IPath;
+  Song: TSong;
+  SongPath: IPath;
+  Found: boolean;
+  SongsToRemove: TList;
+  ChangesDetected: boolean;
+begin
+  Log.LogStatus('Starting incremental song update', 'TSongs.IncrementalUpdate');
+  
+  try
+    fProcessing := true;
+    SongsToRemove := TList.Create;
+    ChangesDetected := false;
+    
+    try
+      Extension := Path('.txt');
+      
+      // Step 1: Check for new and modified songs
+      for I := 0 to SongPaths.Count - 1 do
+      begin
+        SetLength(Files, 0);
+        FindFilesByExtension(SongPaths[I] as IPath, Extension, true, Files);
+        
+        for J := 0 to High(Files) do
+        begin
+          // Check if song already exists in list
+          Found := false;
+          for K := 0 to SongList.Count - 1 do
+          begin
+            Song := TSong(SongList[K]);
+            SongPath := Song.Path.Append(Song.FileName);
+            if SongPath.Equals(Files[J]) then
+            begin
+              // Song exists - already loaded, no need to reload
+              Found := true;
+              Break;
+            end;
+          end;
+          
+          // Add new song if not found
+          if not Found then
+          begin
+            Log.LogStatus('Adding new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
+            Song := TSong.Create(Files[J]);
+            if Song.Analyse then
+            begin
+              SongList.Add(Song);
+              ChangesDetected := true;
+            end
+            else
+            begin
+              Log.LogError('Failed to analyse new song: ' + Files[J].ToNative, 'TSongs.IncrementalUpdate');
+              FreeAndNil(Song);
+            end;
+          end;
+        end;
+      end;
+      
+      // Step 2: Check for deleted songs
+      for K := 0 to SongList.Count - 1 do
+      begin
+        Song := TSong(SongList[K]);
+        SongPath := Song.Path.Append(Song.FileName);
+        if not FileExists(SongPath.ToNative) then
+        begin
+          Log.LogStatus('Song deleted: ' + SongPath.ToNative, 'TSongs.IncrementalUpdate');
+          SongsToRemove.Add(Song);
+          ChangesDetected := true;
+        end;
+      end;
+      
+      // Remove deleted songs
+      for I := 0 to SongsToRemove.Count - 1 do
+      begin
+        Song := TSong(SongsToRemove[I]);
+        SongList.Remove(Song);
+        FreeAndNil(Song);
+      end;
+      
+      // Step 3: Refresh UI only if changes were detected
+      if ChangesDetected then
+      begin
+        Log.LogStatus('Changes detected, refreshing UI', 'TSongs.IncrementalUpdate');
+        
+        if assigned(CatSongs) then
+          CatSongs.Refresh;
+        
+        if assigned(CatCovers) then
+          CatCovers.Load;
+        
+        if assigned(ScreenSong) then
+        begin
+          ScreenSong.GenerateThumbnails();
+          ScreenSong.OnShow;
+        end;
+        
+        Log.LogStatus('Incremental update complete - changes applied', 'TSongs.IncrementalUpdate');
+      end
+      else
+        Log.LogDebug('Incremental update complete - no changes', 'TSongs.IncrementalUpdate');
+      
+    finally
+      FreeAndNil(SongsToRemove);
+    end;
+    
+  finally
+    fProcessing := false;
+  end;
 end;
 
 (*

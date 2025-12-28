@@ -204,7 +204,7 @@ procedure TSongs.Execute();
 var
   LoopCounter: LongInt;
 const
-  CHECK_INTERVAL = 30; // seconds
+  CHECK_INTERVAL = 5; // seconds
 begin
 {$IFDEF USE_PSEUDO_THREAD}
   int_LoadSongList();

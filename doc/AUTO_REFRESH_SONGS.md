@@ -20,7 +20,7 @@ AutoRefreshSongs=On
 ## How It Works
 
 When enabled, the system:
-- Checks for changes every **30 seconds**
+- Checks for changes every **5 seconds**
 - Scans all configured song directories
 - Detects new `.txt` song files and adds them to the library
 - Removes songs that have been deleted
@@ -39,12 +39,12 @@ The incremental update is efficient:
 
 ### Adding New Songs
 1. Copy new song folders to your songs directory
-2. Within 30 seconds, the new songs will appear in the song list
+2. Within 5 seconds, the new songs will appear in the song list
 3. No restart required
 
 ### Deleting Songs
 1. Delete song folders or `.txt` files
-2. Within 30 seconds, those songs will be removed from the list
+2. Within 5 seconds, those songs will be removed from the list
 3. No restart required
 
 ### Modifying Songs
@@ -90,7 +90,7 @@ The monitoring requires a real thread loop, which is not available in pseudo-thr
 - Check that AutoRefreshSongs is set to **On** in Advanced settings
 - Verify the song files have `.txt` extension
 - Ensure files are in a configured song directory
-- Wait at least 30 seconds for the next scan cycle
+- Wait at least 5 seconds for the next scan cycle
 
 ### Feature not working on macOS (Debug builds)
 **Important Limitation:** The auto-refresh feature currently does **not work** on macOS when running debug builds. This is due to the use of pseudo-threads on macOS debug mode, which don't support the background monitoring loop.
@@ -108,8 +108,9 @@ This limitation affects only macOS debug builds; Windows, Linux, and macOS relea
 ## Future Enhancements
 
 Potential improvements for future versions:
-- Configurable scan interval (15/30/60 seconds)
+- Configurable scan interval (5/10/30 seconds)
 - Detection of modified song files (not just new/deleted)
 - Manual trigger option (e.g., F5 key in song screen)
 - Visual indicator during scan
 - Optional notification when new songs are found
+- Native file watching APIs (inotify on Linux, ReadDirectoryChangesW on Windows, FSEvents on macOS)

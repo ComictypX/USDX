@@ -184,12 +184,23 @@ begin
 
   SongList           := TList.Create();
 
-  // until it is fixed, simply load the song-list
+  // Load initial song list
   int_LoadSongList();
+  
+  // Start the monitoring thread for auto-refresh functionality
+  {$IFNDEF USE_PSEUDO_THREAD}
+  Resume();
+  {$ENDIF}
 end;
 
 destructor TSongs.Destroy();
 begin
+  {$IFNDEF USE_PSEUDO_THREAD}
+  // Signal the thread to terminate
+  Terminate;
+  // Don't wait for thread as FreeOnTerminate is true
+  {$ENDIF}
+  
   FreeAndNil(SongList);
 
   inherited;

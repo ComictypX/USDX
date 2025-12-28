@@ -202,7 +202,7 @@ begin
   Terminate;
   WaitFor;
   {$ENDIF}
-  
+
   FreeAndNil(SongList);
 
   inherited;

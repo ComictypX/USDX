@@ -180,16 +180,30 @@ constructor TSongs.Create();
 begin
   // do not start thread BEFORE initialization (suspended = true)
   inherited Create(true);
-  Self.FreeOnTerminate := true;
+  Self.FreeOnTerminate := false;
 
   SongList           := TList.Create();
 
-  // until it is fixed, simply load the song-list
+{$IFDEF USE_PSEUDO_THREAD}
+  // For pseudo threads, load songs directly since Execute won't run continuously
   int_LoadSongList();
+{$ELSE}
+  // For real threads, start the monitoring thread which will load songs and monitor for changes
+  Resume();
+{$ENDIF}
 end;
 
 destructor TSongs.Destroy();
 begin
+  {$IFNDEF USE_PSEUDO_THREAD}
+  // Signal the thread to terminate and wait for it to finish
+  // Note: This may block if a song scan or update is in progress.
+  // The thread checks 'terminated' flag between operations and sleeps,
+  // so it will exit within 1 second unless actively scanning.
+  Terminate;
+  WaitFor;
+  {$ENDIF}
+
   FreeAndNil(SongList);
 
   inherited;

@@ -369,17 +369,22 @@ var
   NewNum, NewTyp: integer;
 begin
   // set inactive
-  if(Interaction > -1) then
+  if((Interaction > -1) and (Interaction < Length(Interactions))) then
   begin
   OldNum := Interactions[Interaction].Num;
   OldTyp := Interactions[Interaction].Typ;
   end;
-  if(Num > -1) then
+  if((Num > -1) and (Num < Length(Interactions))) then
   begin
     NewNum := Interactions[Num].Num;
     NewTyp := Interactions[Num].Typ;
+  end
+  else
+  begin
+    // If Num is out of bounds, don't change interaction
+    exit;
   end;
-  if(Interaction > -1) then
+  if((Interaction > -1) and (Interaction < Length(Interactions))) then
   begin
     case OldTyp of
       iButton:  Button[OldNum].Selected := false;
@@ -397,7 +402,6 @@ begin
     end;
   end;
   SelInteraction := Num;
-  if(Num = -1) then exit;
   // set active
   case NewTyp of
     iButton:  Button[NewNum].Selected := true;
@@ -1244,6 +1248,10 @@ end;
 
 function TMenu.IsSelectable(Int: cardinal): boolean;
 begin
+  Result := false;
+  if (Int >= Length(Interactions)) then
+    Exit;
+    
   Result := true;
   case Interactions[Int].Typ of
     //Button
@@ -1254,7 +1262,10 @@ begin
 
     //ButtonCollection Child
     iBCollectionChild:
-      Result := (ButtonCollection[Button[Interactions[Int].Num].Parent - 1].FirstChild - 1 = Int) and ((Interactions[Interaction].Typ <> iBCollectionChild) or (Button[Interactions[Interaction].Num].Parent <> Button[Interactions[Int].Num].Parent));
+      if (Interaction >= 0) and (Interaction < Length(Interactions)) then
+        Result := (ButtonCollection[Button[Interactions[Int].Num].Parent - 1].FirstChild - 1 = Int) and ((Interactions[Interaction].Typ <> iBCollectionChild) or (Button[Interactions[Interaction].Num].Parent <> Button[Interactions[Int].Num].Parent))
+      else
+        Result := (ButtonCollection[Button[Interactions[Int].Num].Parent - 1].FirstChild - 1 = Int);
   end;
 end;
 
@@ -1350,6 +1361,9 @@ var
   TopVisible, BottomVisible: boolean;
   ScrollOffset: real;
 begin
+  if (Interaction < 0) or (Interaction >= Length(Interactions)) then
+    Exit;
+  
   case Interactions[Interaction].Typ of
     //Button
     iButton:
@@ -1395,6 +1409,12 @@ end;
 
 function TMenu.InteractionIsScrollable(): boolean;
 begin
+  if (Interaction < 0) or (Interaction >= Length(Interactions)) then
+  begin
+    Result := false;
+    Exit;
+  end;
+  
   case Interactions[Interaction].Typ of
     iButton:  Result := Button[Interactions[Interaction].Num].Scrollable;
     iSelectS: Result := SelectsS[Interactions[Interaction].Num].Scrollable;
@@ -1694,6 +1714,9 @@ var
   Num:   integer;
   Value: integer;
 begin
+  if (Interaction < 0) or (Interaction >= Length(Interactions)) then
+    Exit;
+    
   case Interactions[Interaction].Typ of
     iSelectS: begin
         Num := Interactions[Interaction].Num;
@@ -1735,6 +1758,9 @@ var
   Num:   integer;
   Value: integer;
 begin
+  if (Interaction < 0) or (Interaction >= Length(Interactions)) then
+    Exit;
+    
   case Interactions[Interaction].Typ of
     iSelectS: begin
         Num := Interactions[Interaction].Num;
@@ -1770,7 +1796,8 @@ begin
       begin
         InteractPrev;
         // if buttoncollection with more than 1 entry then select last entry
-        if (Button[Interactions[Interaction].Num].Parent <> 0) and (ButtonCollection[Button[Interactions[Interaction].Num].Parent-1].CountChilds > 1) then
+        if ((Interaction >= 0) and (Interaction < Length(Interactions))) and
+           (Button[Interactions[Interaction].Num].Parent <> 0) and (ButtonCollection[Button[Interactions[Interaction].Num].Parent-1].CountChilds > 1) then
         begin
           //Select Last Child
           for Num := High(Button) downto 1 do

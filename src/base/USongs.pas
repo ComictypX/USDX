@@ -197,8 +197,9 @@ destructor TSongs.Destroy();
 begin
   {$IFNDEF USE_PSEUDO_THREAD}
   // Signal the thread to terminate and wait for it to finish
-  // Note: This may block for a few seconds if a song scan is in progress,
-  // but will not deadlock as the thread checks 'terminated' flag every second
+  // Note: This may block if a song scan or update is in progress.
+  // The thread checks 'terminated' flag between operations and sleeps,
+  // so it will exit within 1 second unless actively scanning.
   Terminate;
   WaitFor;
   {$ENDIF}

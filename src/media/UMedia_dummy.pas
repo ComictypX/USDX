@@ -65,16 +65,20 @@ type
 
       procedure SetPosition(Time: real);
       function  GetPosition: real;
+      procedure SetStartTime(Time: real);
+      function  GetStartTime: real;
 
       procedure SetSyncSource(SyncSource: TSyncSource);
 
       // IAudioInput
-      function InitializeRecord: boolean;
+      function InitializeRecord(ScanMode: TAudioInputScanMode): boolean;
       function FinalizeRecord: boolean;
       procedure CaptureStart;
       procedure CaptureStop;
       procedure GetFFTData(var data: TFFTData);
       function GetPCMData(var data: TPCMData): Cardinal;
+      function GetFormatInfo(): TAudioFormatInfo;
+
 
       // IAudioPlayback
       function InitializePlayback: boolean;
@@ -85,6 +89,10 @@ type
       procedure Fade(Time: real; TargetVolume: single);
       procedure SetAppVolume(Volume: single);
       procedure SetVolume(Volume: single);
+      procedure SetVocalsBalance(Balance: single);
+      function GetVocalsBalance: single;
+      function HasInstrumentalTrack: boolean;
+      function GetOverallVolume: single;
       procedure Rewind;
 
       procedure SetLoop(Enabled: boolean);
@@ -100,6 +108,7 @@ type
       procedure StopSound(stream: TAudioPlaybackStream);
 
       function CreateVoiceStream(Channel: integer; FormatInfo: TAudioFormatInfo): TAudioVoiceStream;
+      function CreatePlaybackStreamForSource(SourceStream: TAudioSourceStream): TAudioPlaybackStream;
       procedure CloseVoiceStream(var VoiceStream: TAudioVoiceStream);
     end;
 
@@ -140,12 +149,13 @@ type
       procedure SetAlpha(Alpha: double);
       function GetAlpha(): double;
 
+      procedure SetReflection(Enabled: boolean);
+      function GetReflection: boolean;
       procedure SetReflectionSpacing(Spacing: double);
       function GetReflectionSpacing(): double;
 
       procedure GetFrame(Time: Extended);
       procedure Draw();
-      procedure DrawReflection();
 
       property Screen: integer read GetScreen;
       property Width: double read GetWidth write SetWidth;
@@ -228,12 +238,21 @@ begin
   Result := 0;
 end;
 
+procedure TAudio_Dummy.SetStartTime(Time: real);
+begin
+end;
+
+function  TAudio_Dummy.GetStartTime: real;
+begin
+  Result := 0;
+end;
+
 procedure TAudio_Dummy.SetSyncSource(SyncSource: TSyncSource);
 begin
 end;
 
 // IAudioInput
-function TAudio_Dummy.InitializeRecord: boolean;
+function TAudio_Dummy.InitializeRecord(ScanMode: TAudioInputScanMode): boolean;
 begin
   Result := true;
 end;
@@ -260,6 +279,12 @@ begin
   Result := 0;
 end;
 
+function TAudio_Dummy.GetFormatInfo(): TAudioFormatInfo;
+begin
+  Result := nil;
+end;
+
+
 // IAudioPlayback
 function TAudio_Dummy.InitializePlayback: boolean;
 begin
@@ -285,6 +310,25 @@ end;
 
 procedure TAudio_Dummy.SetVolume(Volume: single);
 begin
+end;
+
+procedure TAudio_Dummy.SetVocalsBalance(Balance: single);
+begin
+end;
+
+function TAudio_Dummy.GetVocalsBalance: single;
+begin
+  Result := 1.0;
+end;
+
+function TAudio_Dummy.HasInstrumentalTrack: boolean;
+begin
+  Result := false;
+end;
+
+function TAudio_Dummy.GetOverallVolume: single;
+begin
+  Result := 1.0;
 end;
 
 procedure TAudio_Dummy.SetLoop(Enabled: boolean);
@@ -341,6 +385,11 @@ begin
 end;
 
 function TAudio_Dummy.CreateVoiceStream(Channel: integer; FormatInfo: TAudioFormatInfo): TAudioVoiceStream;
+begin
+  Result := nil;
+end;
+
+function TAudio_Dummy.CreatePlaybackStreamForSource(SourceStream: TAudioSourceStream): TAudioPlaybackStream;
 begin
   Result := nil;
 end;
@@ -459,6 +508,15 @@ begin
   Result := 0;
 end;
 
+procedure TVideo_Dummy.SetReflection(Enabled: boolean);
+begin
+end;
+
+function TVideo_Dummy.GetReflection: boolean;
+begin
+  Result := false;
+end;
+
 procedure TVideo_Dummy.SetReflectionSpacing(Spacing: double);
 begin
 end;
@@ -473,10 +531,6 @@ begin
 end;
 
 procedure TVideo_Dummy.Draw();
-begin
-end;
-
-procedure TVideo_Dummy.DrawReflection();
 begin
 end;
 

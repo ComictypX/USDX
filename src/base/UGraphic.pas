@@ -35,9 +35,7 @@ interface
 
 uses
   sdl2,
-  dglOpenGL,
-  UTexture,
-  TextGL,
+  UText,
   UConfig,
   UCommon,
   ULog,
@@ -47,12 +45,11 @@ uses
   UCatCovers,
   USongs,
   UAvatars,
-  UCovers,
   UMusic,
+  URenderer,
   UScreenLoading,
   UScreenMain,
   UScreenName,
-  UScreenLevel,
   UScreenOptions,
   UScreenOptionsGame,
   UScreenOptionsGraphics,
@@ -71,7 +68,7 @@ uses
   UScreenJukeboxOptions,
   UScreenJukeboxPlaylist,
   UScreenScore,
-  UScreenTop5,
+  UScreenHighScores,
   UScreenEditSub,
   UScreenEdit,
   UScreenEditConvert,
@@ -94,8 +91,6 @@ uses
   {Stats Screens}
   UScreenStatMain,
   UScreenStatDetail,
-  {CreditsScreen}
-  UScreenCredits,
   {Popup for errors, etc.}
   UScreenPopup;
 
@@ -118,7 +113,6 @@ type
 
 var
   Screen:         PSDL_Window;
-  glcontext:      TSDL_GLContext;
   LoadingThread:  PSDL_Thread;
   Mutex:          PSDL_Mutex;
 
@@ -131,6 +125,11 @@ var
   ScreenH:    integer;
   Screens:    integer;
   ScreenAct:  integer;
+  ScreenWPerScreen: integer;
+  PixelW: single; // Width of a screen pixel on the 800x600 grid
+  PixelH: single; // Height of a screen pixel on the 800x600 grid
+  VertexW: single; // Width of an 800x600 vertex unit in screen pixels
+  VertexH: single; // Height of an 800x600 vertex unit in screen pixels
   LastX, LastY:    integer;
   LastW, LastH:    integer;
   HasValidPosition:     boolean;
@@ -139,7 +138,6 @@ var
   ScreenLoading:      TScreenLoading;
   ScreenMain:         TScreenMain;
   ScreenName:         TScreenName;
-  ScreenLevel:        TScreenLevel;
   ScreenSong:         TScreenSong;
   ScreenSing:         TScreenSingController;
 
@@ -148,7 +146,7 @@ var
   ScreenJukeboxPlaylist: TScreenJukeboxPlaylist;
 
   ScreenScore:        TScreenScore;
-  ScreenTop5:         TScreenTop5;
+  ScreenHighScores:   TScreenHighScores;
   ScreenOptions:          TScreenOptions;
   ScreenOptionsGame:      TScreenOptionsGame;
   ScreenOptionsGraphics:  TScreenOptionsGraphics;
@@ -188,9 +186,6 @@ var
   //StatsScreens
   ScreenStatMain:         TScreenStatMain;
   ScreenStatDetail:       TScreenStatDetail;
-
-  //CreditsScreen
-  ScreenCredits: TScreenCredits;
 
   //popup mod
   ScreenPopupCheck: TScreenPopupCheck;
@@ -280,46 +275,10 @@ var
     Tex_Cursor_Unpressed: TTexture;
     Tex_Cursor_Pressed:   TTexture;
 
-
-  PboSupported: boolean;
-  SoftwareRendering: boolean;
-
 const
-  Skin_BGColorR = 1;
-  Skin_BGColorG = 1;
-  Skin_BGColorB = 1;
-
-  Skin_SpectrumR = 0;
-  Skin_SpectrumG = 0;
-  Skin_SpectrumB = 0;
-
-  Skin_Spectograph1R = 0.6;
-  Skin_Spectograph1G = 0.8;
-  Skin_Spectograph1B = 1;
-
-  Skin_Spectograph2R = 0;
-  Skin_Spectograph2G = 0;
-  Skin_Spectograph2B = 0.2;
-
   Skin_FontR = 0;
   Skin_FontG = 0;
   Skin_FontB = 0;
-
-  Skin_FontHighlightR = 0.3; // 0.3
-  Skin_FontHighlightG = 0.3; // 0.3
-  Skin_FontHighlightB = 1;   // 1
-
-  Skin_TimeR = 0.25; //0,0,0
-  Skin_TimeG = 0.25;
-  Skin_TimeB = 0.25;
-
-  Skin_OscR = 0;
-  Skin_OscG = 0;
-  Skin_OscB = 0;
-
-  Skin_SpectrumT = 470;
-  Skin_SpectrumBot = 570;
-  Skin_SpectrumH = 100;
 
   Skin_P1_LinesR = 0.5;  // 0.6 0.6 1
   Skin_P1_LinesG = 0.5;
@@ -332,18 +291,13 @@ const
   Skin_P1_NotesB = 250;
   Skin_P2_NotesB = 430; // 430 / 300
 
-  Skin_P1_ScoreT = 50;
-  Skin_P1_ScoreL = 20;
-
-  Skin_P2_ScoreT = 50;
-  Skin_P2_ScoreL = 640;
-
 procedure Initialize3D (Title: string);
 procedure Finalize3D;
 procedure Reinitialize3D;
-procedure SwapBuffers;
 
 procedure LoadTextures;
+procedure LoadSingScreenTextures(ForceReload: boolean = false);
+procedure UnloadSingScreenTextures;
 procedure InitializeScreen;
 procedure LoadLoadingScreen;
 procedure LoadScreens(Title: string);
@@ -361,15 +315,22 @@ function HasWindowState(Flag: integer): boolean;
 // events
 procedure OnWindowMoved(x,y: integer);
 procedure OnWindowResized(w,h: integer);
+procedure CalculateScreenMetrics();
+
 
 implementation
 
 
 uses
   Classes,
+  Math,
   UDisplay,
   UCommandLine,
-  UPathUtils;
+  UPathUtils,
+  UThemes;
+
+var
+  SingScreenTexturesLoaded: boolean = false;
 
 procedure LoadFontTextures;
 begin
@@ -394,30 +355,30 @@ begin
 
   Log.LogStatus('Loading Textures - A', 'LoadTextures');
 
-  Tex_Note_Perfect_Star := Texture.LoadTexture(Skin.GetTextureFileName('NotePerfectStar'), TEXTURE_TYPE_TRANSPARENT, 0);
-  Tex_Note_Star         := Texture.LoadTexture(Skin.GetTextureFileName('NoteStar') ,       TEXTURE_TYPE_TRANSPARENT, $FFFFFF);
-  Tex_Ball              := Texture.LoadTexture(Skin.GetTextureFileName('Ball'),            TEXTURE_TYPE_TRANSPARENT, $FF00FF);
-  Tex_Lyric_Help_Bar    := Texture.LoadTexture(Skin.GetTextureFileName('LyricHelpBar'),    TEXTURE_TYPE_TRANSPARENT, 0);
+  Tex_Note_Perfect_Star := Renderer.LoadTexture(Skin.GetTextureFileName('NotePerfectStar'), TEXTURE_TYPE_TRANSPARENT, 0);
+  Tex_Note_Star         := Renderer.LoadTexture(Skin.GetTextureFileName('NoteStar') ,       TEXTURE_TYPE_TRANSPARENT, $FFFFFF);
+  Tex_Ball              := Renderer.LoadTexture(Skin.GetTextureFileName('Ball'),            TEXTURE_TYPE_TRANSPARENT, $FF00FF);
+  Tex_Lyric_Help_Bar    := Renderer.LoadTexture(Skin.GetTextureFileName('LyricHelpBar'),    TEXTURE_TYPE_TRANSPARENT, 0);
 
-  Tex_SelectS_ArrowL    := Texture.LoadTexture(Skin.GetTextureFileName('Select_ArrowLeft'),    TEXTURE_TYPE_TRANSPARENT, 0);
-  Tex_SelectS_ArrowR    := Texture.LoadTexture(Skin.GetTextureFileName('Select_ArrowRight'),    TEXTURE_TYPE_TRANSPARENT, 0);
+  Tex_SelectS_ArrowL    := Renderer.LoadTexture(Skin.GetTextureFileName('Select_ArrowLeft'),    TEXTURE_TYPE_TRANSPARENT, 0);
+  Tex_SelectS_ArrowR    := Renderer.LoadTexture(Skin.GetTextureFileName('Select_ArrowRight'),    TEXTURE_TYPE_TRANSPARENT, 0);
 
-  Tex_Cursor_Unpressed  := Texture.LoadTexture(Skin.GetTextureFileName('Cursor'), TEXTURE_TYPE_TRANSPARENT, 0);
+  Tex_Cursor_Unpressed  := Renderer.LoadTexture(Skin.GetTextureFileName('Cursor'), TEXTURE_TYPE_TRANSPARENT, 0);
 
   if (Skin.GetTextureFileName('Cursor_Pressed').IsSet) then
-    Tex_Cursor_Pressed    := Texture.LoadTexture(Skin.GetTextureFileName('Cursor_Pressed'), TEXTURE_TYPE_TRANSPARENT, 0)
+    Tex_Cursor_Pressed    := Renderer.LoadTexture(Skin.GetTextureFileName('Cursor_Pressed'), TEXTURE_TYPE_TRANSPARENT, 0)
   else
-    Tex_Cursor_Pressed.TexNum := 0;
+    Tex_Cursor_Pressed := nil;
 
   //TimeBar mod
-  Tex_TimeProgress := Texture.LoadTexture(Skin.GetTextureFileName('TimeBar'));
-  Tex_JukeboxTimeProgress := Texture.LoadTexture(Skin.GetTextureFileName('JukeboxTimeBar'));
+  Tex_TimeProgress := Renderer.LoadTexture(Skin.GetTextureFileName('TimeBar'));
+  Tex_JukeboxTimeProgress := Renderer.LoadTexture(Skin.GetTextureFileName('JukeboxTimeBar'));
   //eoa TimeBar mod
 
   //SingBar Mod
-  Tex_SingBar_Back  := Texture.LoadTexture(Skin.GetTextureFileName('SingBarBack'),  TEXTURE_TYPE_PLAIN, 0);
-  Tex_SingBar_Bar   := Texture.LoadTexture(Skin.GetTextureFileName('SingBarBar'),   TEXTURE_TYPE_PLAIN, 0);
-  Tex_SingBar_Front := Texture.LoadTexture(Skin.GetTextureFileName('SingBarFront'), TEXTURE_TYPE_PLAIN, 0);
+  Tex_SingBar_Back  := Renderer.LoadTexture(Skin.GetTextureFileName('SingBarBack'),  TEXTURE_TYPE_PLAIN, 0);
+  Tex_SingBar_Bar   := Renderer.LoadTexture(Skin.GetTextureFileName('SingBarBar'),   TEXTURE_TYPE_PLAIN, 0);
+  Tex_SingBar_Front := Renderer.LoadTexture(Skin.GetTextureFileName('SingBarFront'), TEXTURE_TYPE_PLAIN, 0);
   //end Singbar Mod
 
   Log.LogStatus('Loading Textures - B', 'LoadTextures');
@@ -460,17 +421,112 @@ begin
       End;
 
       Col := $10000 * Round(R*255) + $100 * Round(G*255) + Round(B*255);
-      Tex_SingLineBonusBack[P] :=  Texture.LoadTexture(Skin.GetTextureFileName('LineBonusBack'), TEXTURE_TYPE_COLORIZED, Col);
+      Tex_SingLineBonusBack[P] :=  Renderer.LoadTexture(Skin.GetTextureFileName('LineBonusBack'), TEXTURE_TYPE_COLORIZED, Col);
     end;
 
     Log.LogStatus('Loading Textures - C', 'LoadTextures');
 
     //## rating pictures that show a picture according to your rate ##
     for P := 0 to 7 do begin
-      Tex_Score_Ratings[P] := Texture.LoadTexture(Skin.GetTextureFileName('Rating_'+IntToStr(P)), TEXTURE_TYPE_TRANSPARENT, 0);
+      Tex_Score_Ratings[P] := Renderer.LoadTexture(Skin.GetTextureFileName('Rating_'+IntToStr(P)), TEXTURE_TYPE_TRANSPARENT, 0);
   end;
 
   Log.LogStatus('Loading Textures - Done', 'LoadTextures');
+end;
+
+procedure UnloadSingScreenTextures;
+var
+  I: integer;
+begin
+  for I := 1 to UIni.IMaxPlayerCount do
+  begin
+    FreeAndNil(Tex_Left[I]);
+    FreeAndNil(Tex_Mid[I]);
+    FreeAndNil(Tex_Right[I]);
+    FreeAndNil(Tex_plain_Left[I]);
+    FreeAndNil(Tex_plain_Mid[I]);
+    FreeAndNil(Tex_plain_Right[I]);
+    FreeAndNil(Tex_BG_Left[I]);
+    FreeAndNil(Tex_BG_Mid[I]);
+    FreeAndNil(Tex_BG_Right[I]);
+    FreeAndNil(Tex_Left_Rap[I]);
+    FreeAndNil(Tex_Mid_Rap[I]);
+    FreeAndNil(Tex_Right_Rap[I]);
+    FreeAndNil(Tex_plain_Left_Rap[I]);
+    FreeAndNil(Tex_plain_Mid_Rap[I]);
+    FreeAndNil(Tex_plain_Right_Rap[I]);
+    FreeAndNil(Tex_BG_Left_Rap[I]);
+    FreeAndNil(Tex_BG_Mid_Rap[I]);
+    FreeAndNil(Tex_BG_Right_Rap[I]);
+    FreeAndNil(Tex_ScoreBG[I - 1]);
+  end;
+
+  FreeAndNil(Tex_Left_Inv);
+  FreeAndNil(Tex_Mid_Inv);
+  FreeAndNil(Tex_Right_Inv);
+  FreeAndNil(Tex_Left_Rap_Inv);
+  FreeAndNil(Tex_Mid_Rap_Inv);
+  FreeAndNil(Tex_Right_Rap_Inv);
+  SingScreenTexturesLoaded := false;
+end;
+
+procedure LoadSingScreenTextures(ForceReload: boolean);
+var
+  I: integer;
+  Col: TRGB;
+  Color: cardinal;
+begin
+  if ForceReload then
+    UnloadSingScreenTextures
+  else if SingScreenTexturesLoaded then
+    Exit;
+
+  for I := 1 to UIni.IMaxPlayerCount do
+  begin
+    Col := GetPlayerColor(Ini.SingColor[I - 1]);
+    Color := (Trunc(255 * Col.R) shl 16) or
+             (Trunc(255 * Col.G) shl  8) or
+              Trunc(255 * Col.B);
+
+    Tex_Left[I]         := Renderer.LoadTexture(Skin.GetTextureFileName('GrayLeft'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_Mid[I]          := Renderer.LoadTexture(Skin.GetTextureFileName('GrayMid'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_Right[I]        := Renderer.LoadTexture(Skin.GetTextureFileName('GrayRight'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_plain_Left[I]   := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainLeft'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_plain_Mid[I]    := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainMid'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_plain_Right[I]  := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainRight'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_BG_Left[I]      := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGLeft'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_BG_Mid[I]       := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGMid'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_BG_Right[I]     := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGRight'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_Left_Rap[I]         := Renderer.LoadTexture(Skin.GetTextureFileName('GrayLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_Mid_Rap[I]          := Renderer.LoadTexture(Skin.GetTextureFileName('GrayMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_Right_Rap[I]        := Renderer.LoadTexture(Skin.GetTextureFileName('GrayRightRap'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_plain_Left_Rap[I]   := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_plain_Mid_Rap[I]    := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_plain_Right_Rap[I]  := Renderer.LoadTexture(Skin.GetTextureFileName('NotePlainRightRap'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_BG_Left_Rap[I]      := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
+    Tex_BG_Mid_Rap[I]       := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
+    Tex_BG_Right_Rap[I]     := Renderer.LoadTexture(Skin.GetTextureFileName('NoteBGRightRap'), TEXTURE_TYPE_COLORIZED, Color);
+
+    Tex_ScoreBG[I - 1] := Renderer.LoadTexture(Skin.GetTextureFileName('ScoreBG'), TEXTURE_TYPE_COLORIZED, Color);
+  end;
+
+  Col := GetPlayerColor(Ini.SingColor[0]);
+  Color := (Trunc(255 * (1 - Col.R)) shl 16) or
+           (Trunc(255 * (1 - Col.G)) shl  8) or
+            Trunc(255 * (1 - Col.B));
+
+  Tex_Left_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayLeft'), TEXTURE_TYPE_COLORIZED, Color);
+  Tex_Mid_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayMid'), TEXTURE_TYPE_COLORIZED, Color);
+  Tex_Right_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayRight'), TEXTURE_TYPE_COLORIZED, Color);
+  Tex_Left_Rap_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayLeftRap'), TEXTURE_TYPE_COLORIZED, Color);
+  Tex_Mid_Rap_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayMidRap'), TEXTURE_TYPE_COLORIZED, Color);
+  Tex_Right_Rap_Inv := Renderer.LoadTexture(Skin.GetTextureFileName('GrayRightRap'), TEXTURE_TYPE_COLORIZED, Color);
+  SingScreenTexturesLoaded := true;
 end;
 
 const
@@ -479,13 +535,40 @@ const
 procedure Initialize3D (Title: string);
 var
   Icon: PSDL_Surface;
+  MaxTextureSize: integer;
+  DisplayIndex: integer;
+  DisplayMode: TSDL_DisplayMode;
 begin
   Log.LogStatus('SDL_Init', 'UGraphic.Initialize3D');
   if ( SDL_InitSubSystem(SDL_INIT_VIDEO) = -1 ) then
   begin
     Log.LogCritical('SDL_Init Failed', 'UGraphic.Initialize3D');
   end;
+  PreInitRenderer;
   InitializeScreen;
+  InitRenderer;
+  Renderer.Blend := true;
+  Renderer.DepthTest := true;
+  Renderer.SetOrthographicProjection(0, RenderW, RenderH, 0, -1, 100);
+  Renderer.VSync := true;
+
+  // Borderless fullscreen and windows were started with SDL_WINDOW_HIDDEN flag to avoid flickers during OpenGL
+  // initialization, they need to be shown to the user after the OpenGL context is successfully created
+  if ((CurrentWindowMode = Mode_Borderless) or (CurrentWindowMode = Mode_Windowed)) then
+  begin
+    SDL_ShowWindow(screen);
+    if (CurrentWindowMode = Mode_Borderless) then
+    begin
+      SDL_SetWindowFullscreen(screen, SDL_WINDOW_FULLSCREEN_DESKTOP);
+      DisplayIndex := SDL_GetWindowDisplayIndex(screen);
+      if (DisplayIndex >= 0 ) and (SDL_GetDesktopDisplayMode(DisplayIndex, @DisplayMode) = 0) then
+        OnWindowResized(DisplayMode.w, DisplayMode.h);
+    end
+  end
+  else
+    SDL_SetWindowFullscreen(screen, SDL_WINDOW_FULLSCREEN);
+
+
   // load icon image (must be 32x32 for win32)
   Icon := LoadImage(ResourcesPath.Append(WINDOW_ICON));
   if (Icon <> nil) then
@@ -503,8 +586,6 @@ begin
 
 
   SDL_SetWindowTitle(Screen, PChar(Title + ' - Initializing texturizer'));
-  Texture := TTextureUnit.Create;
-  Texture.Limit :=1920; //currently, Full HD is all we want. switch to 64bit target before going further up
 
   //LoadTextures;
   SDL_SetWindowTitle(Screen, PChar(Title + ' - Initializing video modules'));
@@ -526,18 +607,15 @@ begin
   Log.LogStatus('Loading Loading Screen', 'UGraphic.Initialize3D');
   LoadLoadingScreen;
 
-  // Covers Cache
+  // Category Covers
   SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading and checking songs'));
   Log.LogStatus('Loading and checking songs', 'UGraphic.Initialize3D');
-  Covers := TCoverDatabase.Create;
-
-  // Category Covers
   Log.LogStatus('Creating Category Covers Array', 'Initialization');
   CatCovers:= TCatCovers.Create;
 
-  // Avatars Cache
-  Log.LogStatus('Creating Avatars Cache', 'Initialization');
-  Avatars := TAvatarDatabase.Create;
+  // Avatars
+  Log.LogStatus('Loading Avatars', 'Initialization');
+  Avatars := TAvatarManager.Create;
 
   // Songs
   Log.LogStatus('Creating Song Array', 'Initialization');
@@ -569,18 +647,11 @@ begin
   Log.LogStatus('Finish', 'Initialize3D');
 end;
 
-procedure SwapBuffers;
-begin
-  SDL_GL_SwapWindow(Screen);
-  glMatrixMode(GL_PROJECTION);
-    glLoadIdentity;
-    glOrtho(0, RenderW, RenderH, 0, -1, 100);
-  glMatrixMode(GL_MODELVIEW);
-end;
-
 procedure Finalize3D;
 begin
+  UnloadScreens;
   UnloadFontTextures;
+  Renderer.Free;
   SDL_QuitSubSystem(SDL_INIT_VIDEO);
 end;
 
@@ -601,7 +672,6 @@ var
 
 label
   NoDoubledResolution;
-
 begin
   if (Params.Screens <> -1) then
     Screens := Params.Screens + 1
@@ -654,6 +724,7 @@ begin
 NoDoubledResolution:
 
   Log.LogStatus('Creating window', 'SDL_SetVideoMode');
+  PreInitRenderer;
 
   // TODO: use SDL renderer (for proper scale in "real fullscreen"). Able to choose rendering mode (OpenGL, OpenGL ES, Direct3D)
   if Borderless then
@@ -661,7 +732,7 @@ NoDoubledResolution:
     Log.LogStatus('Set Video Mode...   Borderless fullscreen', 'SDL_SetVideoMode');
     CurrentWindowMode := Mode_Borderless;
     screen := SDL_CreateWindow('UltraStar Deluxe loading...',
-              Ini.PositionX, Ini.PositionY, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_FULLSCREEN_DESKTOP or SDL_WINDOW_RESIZABLE);
+              Ini.PositionX, Ini.PositionY, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_FULLSCREEN_DESKTOP or SDL_WINDOW_RESIZABLE or SDL_WINDOW_HIDDEN);
   end
   else if Fullscreen then
   begin
@@ -675,10 +746,8 @@ NoDoubledResolution:
     Log.LogStatus('Set Video Mode...   Windowed', 'SDL_SetVideoMode');
     CurrentWindowMode := Mode_Windowed;
     screen := SDL_CreateWindow('UltraStar Deluxe loading...',
-              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_RESIZABLE);
+              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_RESIZABLE or SDL_WINDOW_HIDDEN);
   end;
-
-  //SDL_ShowCursor(0);    just to be able to debug while having mosue cursor
 
   if (screen = nil) then
   begin
@@ -718,47 +787,13 @@ NoDoubledResolution:
     end;
   end;
 
-  //LoadOpenGL();
-  glcontext := SDL_GL_CreateContext(Screen);
-  InitOpenGL();
-
-  //   ActivateRenderingContext(
-  ReadExtensions;
-  ReadImplementationProperties;
-  Log.LogInfo('OpenGL vendor ' + glGetString(GL_VENDOR), 'UGraphic.InitializeScreen');
-  if not (glGetError = GL_NO_ERROR) then
-  begin
-    Log.LogInfo('an OpenGL Error happened.', 'UGraphic.InitializeScreen');
-  end;
-  S := glGetString(GL_RENDERER);
-  Log.LogInfo('OpenGL renderer ' + S, 'UGraphic.InitializeScreen');
-  Log.LogInfo('OpenGL version ' + glGetString(GL_VERSION), 'UGraphic.InitializeScreen');
-
-  if (Pos('GDI Generic', S) > 0) or // Microsoft
-     (Pos('Software Renderer', S) > 0) or // Apple
-     (Pos('Software Rasterizer', S) > 0) or // Mesa (-Ddri-drivers=swrast)
-     (Pos('softpipe', S) > 0) or // Mesa (-Dgallium-drivers=swrast -Dllvm=false)
-     (Pos('llvmpipe', S) > 0) or // Mesa (-Dgallium-drivers=swrast -Dllvm=true)
-     (Pos('SWR', S) > 0) or // Mesa (-Dgallium-drivers=swr)
-     (Pos('Mesa X11', S) > 0) or // Mesa (-Dglx=xlib)
-     (Pos('SwiftShader', S) > 0) then // Google; OpenGL ES, D3D9 & Vulkan only so far, but who knows...
-    SoftwareRendering := true
-  else
-    SoftwareRendering := false;
-
   // define virtual (Render) and real (Screen) screen size
   RenderW := 800;
   RenderH := 600;
   ScreenW := ActualW;
   ScreenH := ActualH;
-  // Ausganswerte für die State-Machine setzen
-  SDL_GL_SetSwapInterval(1); // VSYNC (currently Windows only)
+  CalculateScreenMetrics;
 
-  {// clear screen once window is being shown
-  // Note: SwapBuffers uses RenderW/H, so they must be defined before
-  glClearColor(1, 1, 1, 1);
-  glClear(GL_COLOR_BUFFER_BIT);
-  SwapBuffers;}
 end;
 
 function HasWindowState(Flag: integer): boolean;
@@ -817,6 +852,11 @@ procedure SetVideoMode(Mode: FullscreenModes);
     Disp: TSDL_DisplayMode;
 begin
   if Mode = CurrentWindowMode then Exit;
+  // SDL may dispatch resize events while changing the window flags. Set the
+  // target mode first so those events cannot treat a fullscreen size as the
+  // size to restore when returning to a window.
+  CurrentWindowMode := Mode;
+
   if Mode >= Mode_Fullscreen then
   begin
     Mode := Mode and not Mode_Borderless;
@@ -835,14 +875,17 @@ begin
   else if Mode = Mode_Windowed then
   begin
     WindowModeDirty := true; // set window size dirty to restore old size after switching from fullscreen
-    SDL_SetWindowFullscreen(screen, SDL_WINDOW_RESIZABLE); // calls window-resize event which updates screen sizes
+    SDL_SetWindowFullscreen(screen, 0); // calls window-resize event which updates screen sizes
 
     ScreenW := LastW; ScreenH := LastH;
     if not HasValidSize then Ini.GetResolution(ScreenW, ScreenH);
+    // SDL sends resize notifications asynchronously. Keep the render metrics in
+    // sync now as well, otherwise the first windowed frames still use the
+    // fullscreen viewport width.
+    CalculateScreenMetrics;
     SDL_SetWindowSize(screen, ScreenW, ScreenH);
   end;
 
-  CurrentWindowMode := Mode;
 end;
 
 function SwitchVideoMode(Mode: FullscreenModes): FullscreenModes;
@@ -889,6 +932,7 @@ begin
     // override render size
     ScreenW := LastW;
     ScreenH := LastH;
+    CalculateScreenMetrics;
     SDL_SetWindowPosition(screen, LastX, LastY);
 
     // if there wasn't a windowed mode before, center window
@@ -901,8 +945,9 @@ begin
   begin
     // override render size
     ScreenW := w; ScreenH := h;
-
-    if not HasWindowState(SDL_WINDOW_MAXIMIZED or SDL_WINDOW_FULLSCREEN) then
+    CalculateScreenMetrics;
+    if (CurrentWindowMode = Mode_Windowed) and
+       not HasWindowState(SDL_WINDOW_MAXIMIZED or SDL_WINDOW_FULLSCREEN) then
     begin
       HasValidSize := true;
       LastW := w;
@@ -926,26 +971,54 @@ begin
   end;
 end;
 
+procedure CalculateScreenMetrics();
+begin
+  ScreenWPerScreen := ScreenW div Screens;
+  PixelW := RenderW / ScreenWPerScreen;
+  PixelH := RenderH / ScreenH;
+  VertexW := ScreenWPerScreen / RenderW;
+  VertexH := ScreenH / RenderH;
+end;
+
 procedure LoadLoadingScreen;
 begin
   ScreenLoading := TScreenLoading.Create;
   ScreenLoading.OnShow;
   Display.CurrentScreen := @ScreenLoading;
-  SwapBuffers;
+  Renderer.SwapBuffers;
   ScreenLoading.Draw;
   Display.Draw;
-  SwapBuffers;
+  Renderer.SwapBuffers;
 end;
 
 procedure LoadScreens(Title: string);
+  procedure SetLoadingTitle(const Value: string);
+  const
+    MaxLoadingStatusLength = 25;
+  var
+    Event: TSDL_Event;
+    LoadingStatus: string;
+  begin
+    SDL_SetWindowTitle(Screen, PChar(Title + ' - ' + Value));
+    Log.LogDebug(Value, 'UGraphic.LoadScreens');
+    if Assigned(ScreenLoading) then
+    begin
+      LoadingStatus := Value;
+      if Length(LoadingStatus) > MaxLoadingStatusLength then
+        LoadingStatus := Copy(LoadingStatus, 1, MaxLoadingStatusLength - 3) + '...';
+      ScreenLoading.SetStatus(LoadingStatus);
+    end;
+    while SDL_PollEvent(@Event) <> 0 do
+      ;
+  end;
+
 begin
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenMain & ScreenName'));
+  SetLoadingTitle('Loading ScreenMain & ScreenName');
   ScreenMain :=             TScreenMain.Create;
   ScreenName :=             TScreenName.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenLevel & ScreenSong'));
-  ScreenLevel :=            TScreenLevel.Create;
+  SetLoadingTitle('Loading ScreenSong');
   ScreenSong :=             TScreenSong.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenSongMenu & ScreenJukebox'));
+  SetLoadingTitle('Loading ScreenSongMenu & ScreenJukebox');
   ScreenSongMenu :=             TScreenSongMenu.Create;
   ScreenJukebox :=             TScreenJukebox.Create;
   Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen Jukebox', 3); Log.BenchmarkStart(3);
@@ -953,65 +1026,64 @@ begin
   Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen Jukebox Options', 3); Log.BenchmarkStart(3);
   ScreenJukeboxPlaylist :=   TScreenJukeboxPlaylist.Create;
   Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen Jukebox Playlist', 3); Log.BenchmarkStart(3);
-  ScreenTop5 :=             TScreenTop5.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptions & ScreenOptionsGame'));
+  ScreenHighScores :=       TScreenHighScores.Create;
+  SetLoadingTitle('Loading ScreenOptions & ScreenOptionsGame');
   ScreenOptions :=          TScreenOptions.Create;
   ScreenOptionsGame :=      TScreenOptionsGame.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsGraphics & ScreenOptionsSound & ScreenOptionsInput'));
+  SetLoadingTitle('Loading ScreenOptionsGraphics & ScreenOptionsSound & ScreenOptionsInput');
   ScreenOptionsGraphics  :=  TScreenOptionsGraphics.Create;
   ScreenOptionsSound    :=     TScreenOptionsSound.Create;
   ScreenOptionsInput    :=     TScreenOptionsInput.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsLyrics & ScreenOptionsThemes'));
+  SetLoadingTitle('Loading ScreenOptionsLyrics & ScreenOptionsThemes');
   ScreenOptionsLyrics   :=    TScreenOptionsLyrics.Create;
   ScreenOptionsThemes   :=    TScreenOptionsThemes.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsRecord & ScreenOptionsAdvanced'));
+  SetLoadingTitle('Loading ScreenOptionsRecord & ScreenOptionsAdvanced');
   ScreenOptionsRecord   :=    TScreenOptionsRecord.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsAdvanced'));
+  SetLoadingTitle('Loading ScreenOptionsAdvanced');
   ScreenOptionsAdvanced :=    TScreenOptionsAdvanced.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsNetwork'));
+  SetLoadingTitle('Loading ScreenOptionsNetwork');
   ScreenOptionsNetwork :=    TScreenOptionsNetwork.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsWebCam'));
+  SetLoadingTitle('Loading ScreenOptionsWebCam');
   ScreenOptionsWebcam  :=    TScreenOptionsWebcam.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOptionsJukebox'));
+  SetLoadingTitle('Loading ScreenOptionsJukebox');
   ScreenOptionsJukebox :=    TScreenOptionsJukebox.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenEditConvert & ScreenEditSub & ScreenEdit'));
+  SetLoadingTitle('Loading ScreenEditConvert & ScreenEditSub & ScreenEdit');
   ScreenEditConvert :=      TScreenEditConvert.Create;
   ScreenEditSub :=          TScreenEditSub.Create;
   ScreenEdit :=             TScreenEdit.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenOpen'));
+  SetLoadingTitle('Loading ScreenOpen');
   ScreenOpen :=             TScreenOpen.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenAbout'));
+  SetLoadingTitle('Loading ScreenAbout');
   ScreenAbout :=             TScreenAbout.Create;
   Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen About', 3); Log.BenchmarkStart(3);
   //ScreenSingModi :=         TScreenSingModi.Create;
   //Log.BenchmarkEnd(3); Log.LogBenchmark('====> Screen Sing with Modi support', 3); Log.BenchmarkStart(3);
   ScreenSongJumpto :=         TScreenSongJumpto.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenPopupCheck & ScreenPopupError & ScreenPopupHelp'));
+  SetLoadingTitle('Loading ScreenPopupCheck & ScreenPopupError & ScreenPopupHelp');
   ScreenPopupCheck := TScreenPopupCheck.Create;
   ScreenPopupError := TScreenPopupError.Create;
   ScreenPopupHelp  := TScreenPopupHelp.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenPopupInfo & ScreenScoreX & ScreenPartyNewRound'));
+  SetLoadingTitle('Loading ScreenPopupInfo & ScreenScoreX & ScreenPartyNewRound');
   ScreenPopupInfo := TScreenPopupInfo.Create;
   ScreenPopupInsertUser := TScreenPopupInsertUser.Create;
   ScreenPopupSendScore := TScreenPopupSendScore.Create;
   ScreenPopupScoreDownload := TScreenPopupScoreDownload.Create;
   ScreenPartyNewRound :=    TScreenPartyNewRound.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenPartyScore & ScreenPartyWin'));
+  SetLoadingTitle('Loading ScreenPartyScore & ScreenPartyWin');
   ScreenPartyScore :=       TScreenPartyScore.Create;
   ScreenPartyWin :=         TScreenPartyWin.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenPartyOptions & ScreenPartyPlayer'));
+  SetLoadingTitle('Loading ScreenPartyOptions & ScreenPartyPlayer');
   ScreenPartyOptions :=     TScreenPartyOptions.Create;
   ScreenPartyPlayer :=      TScreenPartyPlayer.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenPartyRounds & ScreenTournamentX & ScreenStatMain'));
+  SetLoadingTitle('Loading ScreenPartyRounds & ScreenTournamentX & ScreenStatMain');
   ScreenPartyRounds :=      TScreenPartyRounds.Create;
   ScreenPartyTournamentRounds :=      TScreenPartyTournamentRounds.Create;
   ScreenPartyTournamentPlayer :=      TScreenPartyTournamentPlayer.Create;
   ScreenPartyTournamentOptions :=      TScreenPartyTournamentOptions.Create;
   ScreenPartyTournamentWin :=      TScreenPartyTournamentWin.Create;
   ScreenStatMain :=         TScreenStatMain.Create;
-  SDL_SetWindowTitle(Screen, PChar(Title + ' - Loading ScreenStatDetail & ScreenCredits'));
+  SetLoadingTitle('Loading ScreenStatDetail');
   ScreenStatDetail :=       TScreenStatDetail.Create;
-  ScreenCredits    :=       TScreenCredits.Create;
   SDL_SetWindowTitle(Screen, PChar(Title));
 end;
 
@@ -1025,7 +1097,6 @@ procedure UnloadScreens;
 begin
   FreeAndNil(ScreenMain);
   FreeAndNil(ScreenName);
-  FreeAndNil(ScreenLevel);
   FreeAndNil(ScreenSong);
   //ScreenSing.Free;
   FreeAndNil(ScreenScore);
@@ -1047,7 +1118,7 @@ begin
   FreeAndNil(ScreenJukebox);
   FreeAndNil(ScreenJukeboxOptions);
   FreeAndNil(ScreenJukeboxPlaylist);
-  FreeAndNil(ScreenTop5);
+  FreeAndNil(ScreenHighScores);
   FreeAndNil(ScreenOpen);
   FreeAndNil(ScreenAbout);
   //ScreenSingModi.Free;
@@ -1071,6 +1142,7 @@ begin
   FreeAndNil(ScreenPartyTournamentWin);
   FreeAndNil(ScreenStatMain);
   FreeAndNil(ScreenStatDetail);
+  UnloadSingScreenTextures;
 end;
 
 end.

@@ -12,7 +12,7 @@ Official Project Website: https://usdx.eu/
 UltraStar Deluxe (USDX) is a free and open source karaoke game. It allows up to six players to sing along with music using microphones in order to score points, depending on the pitch of the voice and the rhythm of singing.
 UltraStar Deluxe is a fork of the original UltraStar (developed by corvus5).
 Many features have been added like party mode, theme support and support for more audio and video formats.
-The improved stability and code quality of USDX enabled ports to Linux and Mac OS X.
+The improved stability and code quality of USDX enabled ports to Linux and macOS.
 
 ### 2. Installation
 Currently, the following installation channels are offered:
@@ -30,24 +30,19 @@ Currently, the following installation channels are offered:
 ```
 - To enable joypad support change config.ini `Joypad=Off` to `Joypad=On`
 - To enable 2 or 3 player each on 2 screens, disable the full screen mode, extend your desktop horizontally and set the resolution to fill one screen. Then, in the config.ini set `Screens=2` and restart the game.
-- The primary folder for songs on OS X is `$HOME/Music/UltraStar Deluxe`, which is created when UltraStar Deluxe is run for the first time.
-- On OS X, by default the `config.ini` file is created in `$HOME/Library/Application Support/UltraStarDeluxe` when UltraStar Deluxe is run for the first time.
+- The primary folder for songs on macOS is `$HOME/Music/UltraStar Deluxe`, which is created when UltraStar Deluxe is run for the first time.
+- On macOS, by default the `config.ini` file is created in `$HOME/Library/Application Support/UltraStarDeluxe` when UltraStar Deluxe is run for the first time.
 - When running in borderless fullscreen mode, the monitor it runs on can be configured by setting `Graphics.PositionX/Y` to an offset in pixels.
 - If installed via the flatpak package, the primary song folder is `~/.var/app/eu.usdx.UltraStarDeluxe/.ultrastardx/songs/` and the config.ini is located in `~/.var/app/eu.usdx.UltraStarDeluxe/.ultrastardx/` by default. To configure additional song directories, they first need to be made accessible to the flatpak app using the command: `flatpak override eu.usdx.UltraStarDeluxe --filesystem=/your/new/songfolder` - Afterwards, the directory can be added to the config.ini file as usual.
 
 ### 4. Further documentation
-The [wiki](https://github.com/UltraStar-Deluxe/USDX/wiki) contains more information on:
-* [Command-line parameters](https://github.com/UltraStar-Deluxe/USDX/wiki/Command-Line-Parameters)
-* [Controls](https://github.com/UltraStar-Deluxe/USDX/wiki/Controls)
-* [Customization](https://github.com/UltraStar-Deluxe/USDX/wiki/Customization)
+The [documentation](https://usdx.eu/docs/) contains more information on:
+* [Command-line parameters](https://usdx.eu/docs/command-line-parameters/)
+* [Controls](https://usdx.eu/docs/controls/)
+* [Customization](https://usdx.eu/docs/customization/)
 
 ### 5. Compiling
-There are two main ways to compile the game:
-
-1. Lazarus IDE
-2. `./autogen.sh && ./configure [--enable-debug] && make`
-
-The executable will be `game/ultrastardx[.exe]`.
+The game has an Autotools-based buildsystem and can be compiled by running `./autogen.sh && ./configure [--enable-debug] && make`. The executable will be `game/ultrastardx[.exe]`.
 
 For extended information, dependencies, OS-specific notes and configure flags, see [COMPILING.md](COMPILING.md).
 

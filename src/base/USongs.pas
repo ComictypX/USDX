@@ -53,7 +53,6 @@ uses
   {$ENDIF}
   UPlatform,
   ULog,
-  UTexture,
   UCommon,
   {$IFDEF USE_PSEUDO_THREAD}
   PseudoThread,
@@ -77,18 +76,11 @@ type
     fltTags
   );
 
-  TBPM = record
-    BPM:       real;
-    StartBeat: real;
-  end;
-
   TScore = record
     Name:   UTF8String;
     Score:  integer;
     Length: string;
   end;
-
-  TPathDynArray = array of IPath;
 
   {$IFDEF USE_PSEUDO_THREAD}
   TSongs = class(TPseudoThread)
@@ -98,10 +90,19 @@ type
   private
     fParseSongDirectory: boolean;
     fProcessing:         boolean;
+    fDiscoveringDirectories: boolean;
+    fDiscoveryDirCount:  integer;
+    fDiscoveryDirsScanned: integer;
+    fTotalSongsToLoad:   integer;
+    fSongsLoaded:        integer;
+    function CollectSongFiles: TPathDynArray;
     procedure int_LoadSongList;
     procedure DoDirChanged(Sender: TObject);
     function CheckForChanges(): boolean;
     procedure IncrementalUpdate();
+    procedure LoadSongFromFile(const FilePath: IPath);
+    procedure UpdateDiscoveryProgress(SongsFound: integer; Force: boolean = false);
+    procedure UpdateSongLoadingProgress(Force: boolean = false);
   protected
     procedure Execute; override;
   public
@@ -112,9 +113,7 @@ type
     destructor  Destroy(); override;
 
     procedure LoadSongList;     // load all songs
-    procedure FindFilesByExtension(const Dir: IPath; const Ext: IPath; Recursive: Boolean; var Files: TPathDynArray);
-    procedure BrowseDir(Dir: IPath); // should return number of songs in the future
-    procedure BrowseTXTFiles(Dir: IPath);
+  procedure FindFilesByExtension(const Dir: IPath; const Ext: IPath; Recursive: Boolean; var Files: TPathDynArray);
     procedure Sort(Order: TSortingType);
     property  Processing: boolean read fProcessing;
   end;
@@ -136,6 +135,7 @@ type
     procedure HideCategory(Index: integer);                 // hides all songs in category
     procedure ClickCategoryButton(Index: integer);          // uses ShowCategory and HideCategory when needed
     procedure ShowCategoryList;                             // Hides all Songs And Show the List of all Categorys
+    procedure ResetVisibleIndexCache;
     function FindNextVisible(SearchFrom: integer): integer; // Find Next visible Song
     function FindPreviousVisible(SearchFrom: integer): integer; // Find Previous visible Song
     function VisibleSongs: integer;                         // returns number of visible songs (for tabs)
@@ -168,6 +168,8 @@ uses
   StrUtils,
   SyncObjs,
   UCovers,
+  SDL2,
+  UCommandLine,
   UFiles,
   UGraphic,
   UMain,
@@ -175,6 +177,68 @@ uses
   UNote,
   UFilesystem,
   UUnicodeUtils;
+
+var
+  LastLoadingEventPumpTicks: cardinal = 0;
+
+procedure PumpLoadingEvents;
+const
+  LoadingEventPumpIntervalMs = 50;
+var
+  Event: TSDL_Event;
+  NowTicks: cardinal;
+begin
+  NowTicks := SDL_GetTicks;
+  if (LastLoadingEventPumpTicks <> 0) and (NowTicks - LastLoadingEventPumpTicks < LoadingEventPumpIntervalMs) then
+    Exit;
+
+  while SDL_PollEvent(@Event) <> 0 do
+    ;
+
+  LastLoadingEventPumpTicks := NowTicks;
+end;
+
+function CollectDirectories(const StartDir: IPath; Recursive: Boolean; Owner: TSongs = nil): TPathDynArray;
+var
+  Iter: IFileIterator;
+  FileInfo: TFileInfo;
+  FileName: IPath;
+  SubDirs: TPathDynArray;
+  SubDirCount, SubDirIdx: Integer;
+begin
+  SetLength(Result, 1);
+  Result[0] := StartDir;
+  if Assigned(Owner) then
+  begin
+    Inc(Owner.fDiscoveryDirCount);
+    Owner.UpdateDiscoveryProgress(0);
+    PumpLoadingEvents;
+  end;
+  if not Recursive then
+    Exit;
+
+  Iter := FileSystem.FileFind(StartDir.Append('*'), faDirectory);
+  while Iter.HasNext do
+  begin
+    FileInfo := Iter.Next;
+    FileName := FileInfo.Name;
+    if ((FileInfo.Attr and faDirectory) <> 0) and
+       (not FileName.Equals('.')) and
+       (not FileName.Equals('..')) and
+       (not FileName.Equals('')) then
+    begin
+      Log.LogDebug('Recursing: ' + StartDir.Append(FileName).ToWide, 'TSongs.FindFilesByExtension');
+      SubDirs := CollectDirectories(StartDir.Append(FileName), true, Owner);
+      SubDirCount := Length(SubDirs);
+      if SubDirCount > 0 then
+      begin
+        SetLength(Result, Length(Result) + SubDirCount);
+        for SubDirIdx := 0 to SubDirCount - 1 do
+          Result[High(Result) - SubDirCount + 1 + SubDirIdx] := SubDirs[SubDirIdx];
+      end;
+    end;
+  end;
+end;
 
 constructor TSongs.Create();
 begin
@@ -259,24 +323,48 @@ end;
 procedure TSongs.int_LoadSongList;
 var
   I: integer;
+  SongFiles: TPathDynArray;
 begin
+  SetLength(SongFiles, 0);
   try
     fProcessing := true;
 
     Log.LogStatus('Searching For Songs', 'SongList');
 
-    // browse directories
-    for I := 0 to SongPaths.Count-1 do
-      BrowseDir(SongPaths[I] as IPath);
+    fDiscoveringDirectories := false;
+    fDiscoveryDirCount := 0;
+    fDiscoveryDirsScanned := 0;
+    fSongsLoaded := 0;
+    fTotalSongsToLoad := 0;
+    if Assigned(ScreenLoading) then
+    begin
+      ScreenLoading.SetDiscoveryProgress(0, 0, 0);
+      ScreenLoading.SetSongLoadingProgress(0, 0);
+      ScreenLoading.RefreshProgress(true);
+    end;
+
+    SongFiles := CollectSongFiles;
+
+    fTotalSongsToLoad := Length(SongFiles);
+    UpdateDiscoveryProgress(fTotalSongsToLoad, true);
+    UpdateSongLoadingProgress(true);
+
+    for I := 0 to High(SongFiles) do
+    begin
+      LoadSongFromFile(SongFiles[I]);
+      Inc(fSongsLoaded);
+      UpdateSongLoadingProgress;
+      PumpLoadingEvents;
+    end;
+
+    if fTotalSongsToLoad > 0 then
+      UpdateSongLoadingProgress(true);
 
     if assigned(CatSongs) then
       CatSongs.Refresh;
 
     if assigned(CatCovers) then
       CatCovers.Load;
-
-    //if assigned(Covers) then
-    //  Covers.Load;
 
     if assigned(ScreenSong)  then
     begin
@@ -285,6 +373,7 @@ begin
     end;
 
   finally
+    SetLength(SongFiles, 0);
     Log.LogStatus('Search Complete', 'SongList');
 
     fParseSongDirectory := false;
@@ -299,71 +388,150 @@ begin
   Resume();
 end;
 
-procedure TSongs.BrowseDir(Dir: IPath);
-begin
-  BrowseTXTFiles(Dir);
-end;
-
 procedure TSongs.FindFilesByExtension(const Dir: IPath; const Ext: IPath; Recursive: Boolean; var Files: TPathDynArray);
 var
+  DirList: TPathDynArray;
+  DirIndex: Integer;
   Iter: IFileIterator;
   FileInfo: TFileInfo;
   FileName: IPath;
 begin
-  // search for all files and directories
-  Iter := FileSystem.FileFind(Dir.Append('*'), faAnyFile);
-  while (Iter.HasNext) do
+  if Recursive then
+    DirList := CollectDirectories(Dir, true, Self)
+  else
   begin
-    // the debug statements in this function have exactly the same message length before it prints the path
-    FileInfo := Iter.Next;
-    FileName := FileInfo.Name;
-    if ((FileInfo.Attr and faDirectory) <> 0) then
+    SetLength(DirList, 1);
+    DirList[0] := Dir;
+  end;
+
+  for DirIndex := 0 to High(DirList) do
+  begin
+    Iter := FileSystem.FileFind(DirList[DirIndex].Append('*.txt'), 0);
+    while Iter.HasNext do
     begin
-      if Recursive and (not FileName.Equals('.')) and (not FileName.Equals('..')) and (not FileName.Equals('')) then begin
-        Log.LogDebug('Recursing: ' + Dir.Append(FileName).ToWide, 'TSongs.FindFilesByExtension');
-        FindFilesByExtension(Dir.Append(FileName), Ext, true, Files);
-      end;
-    end
-    else
-    begin
-      // do not load files which either have wrong extension or start with a point
-      if (Ext.Equals(FileName.GetExtension(), true) and not (FileName.ToUTF8()[1] = '.')) then
+      FileInfo := Iter.Next;
+      FileName := FileInfo.Name;
+      if ((FileInfo.Attr and faDirectory) = 0) and Ext.Equals(FileName.GetExtension(), true) then
       begin
-        Log.LogDebug('Found file ' + Dir.Append(FileName).ToWide, 'TSongs.FindFilesByExtension');
-        SetLength(Files, Length(Files)+1);
-        Files[High(Files)] := Dir.Append(FileName);
+        Log.LogDebug('Found file ' + DirList[DirIndex].Append(FileName).ToWide, 'TSongs.FindFilesByExtension');
+        SetLength(Files, Length(Files) + 1);
+        Files[High(Files)] := DirList[DirIndex].Append(FileName);
+        PumpLoadingEvents;
       end;
     end;
   end;
 end;
 
-procedure TSongs.BrowseTXTFiles(Dir: IPath);
+function TSongs.CollectSongFiles: TPathDynArray;
 var
-  I: integer;
-  Files: TPathDynArray;
-  Song: TSong;
-  //CloneSong: TSong;
+  DirIndex, FileIndex, AppendIndex, AdditionalCount, ScanIndex: integer;
+  DirList: TPathDynArray;
+  AllDirs: TPathDynArray;
+  DirFiles: TPathDynArray;
   Extension: IPath;
+  DirPath: IPath;
 begin
-  Log.LogDebug('Searching directory ' + Dir.ToWide + ' for txt files', 'TSongs.BrowseTXTFiles');
-  SetLength(Files, 0);
+  SetLength(Result, 0);
+  SetLength(AllDirs, 0);
+
+  if SongPaths = nil then
+    Exit;
+
   Extension := Path('.txt');
-  FindFilesByExtension(Dir, Extension, true, Files);
+  fDiscoveringDirectories := true;
+  UpdateDiscoveryProgress(0, true);
 
-  for I := 0 to High(Files) do
+  for DirIndex := 0 to SongPaths.Count - 1 do
   begin
-    Song := TSong.Create(Files[I]);
-
-    if Song.Analyse then
-      SongList.Add(Song)
-    else
+    DirPath := SongPaths[DirIndex] as IPath;
+    Log.LogDebug('Searching directory ' + DirPath.ToWide + ' for txt files', 'TSongs.CollectSongFiles');
+    DirList := CollectDirectories(DirPath, true, Self);
+    AdditionalCount := Length(DirList);
+    if AdditionalCount > 0 then
     begin
-      Log.LogError('AnalyseFile failed for "' + Files[I].ToNative + '".');
-      FreeAndNil(Song);
+      AppendIndex := Length(AllDirs);
+      SetLength(AllDirs, AppendIndex + AdditionalCount);
+      for FileIndex := 0 to AdditionalCount - 1 do
+        AllDirs[AppendIndex + FileIndex] := DirList[FileIndex];
     end;
   end;
 
-  SetLength(Files, 0);
+  fDiscoveringDirectories := false;
+  fDiscoveryDirCount := Length(AllDirs);
+  fDiscoveryDirsScanned := 0;
+  UpdateDiscoveryProgress(0, true);
+
+  for ScanIndex := 0 to High(AllDirs) do
+  begin
+    SetLength(DirFiles, 0);
+    FindFilesByExtension(AllDirs[ScanIndex], Extension, false, DirFiles);
+    AdditionalCount := Length(DirFiles);
+    if AdditionalCount > 0 then
+    begin
+      AppendIndex := Length(Result);
+      SetLength(Result, AppendIndex + AdditionalCount);
+      for FileIndex := 0 to AdditionalCount - 1 do
+        Result[AppendIndex + FileIndex] := DirFiles[FileIndex];
+    end;
+
+    Inc(fDiscoveryDirsScanned);
+    UpdateDiscoveryProgress(Length(Result));
+    PumpLoadingEvents;
+    SetLength(DirFiles, 0);
+  end;
+end;
+
+procedure TSongs.LoadSongFromFile(const FilePath: IPath);
+var
+  Song: TSong;
+begin
+  Song := TSong.Create(FilePath);
+
+  if Song.Analyse(false, false, false, false, 0, Params.CheckSongs) then
+    SongList.Add(Song)
+  else
+  begin
+    Log.LogError('AnalyseFile failed for "' + FilePath.ToNative + '".');
+    FreeAndNil(Song);
+  end;
+end;
+
+procedure TSongs.UpdateDiscoveryProgress(SongsFound: integer; Force: boolean = false);
+var
+  Percent: integer;
+  FilesNeeded: integer;
+begin
+  if not Assigned(ScreenLoading) then
+    Exit;
+
+  if fDiscoveringDirectories then
+  begin
+    FilesNeeded := 0;
+    Percent := 0;
+    while (Percent < 99) and (fDiscoveryDirCount >= FilesNeeded + 5 * (Percent + 1)) do
+    begin
+      Inc(Percent);
+      Inc(FilesNeeded, 5 * Percent);
+    end;
+    ScreenLoading.SetDiscoveryProgress(Percent, 200, SongsFound);
+  end
+  else if fDiscoveryDirCount > 0 then
+    ScreenLoading.SetDiscoveryProgress(fDiscoveryDirCount + fDiscoveryDirsScanned, fDiscoveryDirCount * 2, SongsFound)
+  else
+    ScreenLoading.SetDiscoveryProgress(0, 100, SongsFound);
+
+  if Force then
+    ScreenLoading.RefreshProgress(true);
+end;
+
+procedure TSongs.UpdateSongLoadingProgress(Force: boolean = false);
+begin
+  if not Assigned(ScreenLoading) then
+    Exit;
+
+  ScreenLoading.SetSongLoadingProgress(fSongsLoaded, fTotalSongsToLoad);
+  if Force then
+    ScreenLoading.RefreshProgress(true);
 end;
 
 function TSongs.CheckForChanges(): boolean;
@@ -624,10 +792,6 @@ begin
         Songs.Sort(sArtist);
         Songs.Sort(sYear);
       end;
-    sPlaylist: begin
-        Songs.Sort(sTitle);
-        Songs.Sort(sArtist);
-      end;
   end; // case
 end;
 
@@ -881,8 +1045,7 @@ begin
     CurSong.Visible := true;
 }
   end;
-  LastVisChecked := 0;
-  LastVisIndex := 0;
+  ResetVisibleIndexCache;
 
   // set CatNumber of last category
   if (Ini.TabsAtStartup = 1) and (High(Song) >= 1) then
@@ -913,8 +1076,7 @@ begin
 //  KMS: This should be the same, but who knows :-)
     CatSongs.Song[S].Visible := ((CatSongs.Song[S].OrderNum = Index) and (not CatSongs.Song[S].Main));
   end;
-  LastVisChecked := 0;
-  LastVisIndex := 0;
+  ResetVisibleIndexCache;
 end;
 
 procedure TCatSongs.HideCategory(Index: integer); // hides all songs in category
@@ -926,8 +1088,7 @@ begin
     if not CatSongs.Song[S].Main then
       CatSongs.Song[S].Visible := false // hides all at now
   end;
-  LastVisChecked := 0;
-  LastVisIndex := 0;
+  ResetVisibleIndexCache;
 end;
 
 procedure TCatSongs.ClickCategoryButton(Index: integer);
@@ -955,10 +1116,18 @@ begin
     CatSongs.Song[S].Visible := CatSongs.Song[S].Main;
   CatSongs.Selected := CatNumShow; //Show last shown Category
   CatNumShow := -1;
-  LastVisChecked := 0;
-  LastVisIndex := 0;
+  ResetVisibleIndexCache;
 end;
 //Hide Categorys when in Category Hack End
+
+procedure TCatSongs.ResetVisibleIndexCache;
+begin
+  LastVisChecked := 0;
+  LastVisIndex := 0;
+
+  if Length(Song) > 0 then
+    Song[0].VisibleIndex := 0;
+end;
 
 // Wrong song selected when tabs on bug
 function TCatSongs.FindNextVisible(SearchFrom:integer): integer;// Find next Visible Song
@@ -1037,6 +1206,11 @@ var
   TmpString: UTF8String;
   WordArray: array of UTF8String;
 begin
+    if Assigned(PlayListMan) then
+    begin
+      if (Filter = fltAll) and (Trim(FilterStr) = '') then
+        PlayListMan.RestoreSongOrder;
+    end;
 
   FilterStr := Trim(LowerCase(TransliterateToASCII(FilterStr)));
 
@@ -1109,8 +1283,7 @@ begin
     end;
     Result := 0;
   end;
-  LastVisChecked := 0;
-  LastVisIndex := 0;
+  ResetVisibleIndexCache;
 end;
 
 // -----------------------------------------------------------------------------

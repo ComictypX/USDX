@@ -88,6 +88,17 @@ uses
 type
   TGetTextFunc = function(var Param: integer; Offset: integer; Modify: boolean; OptText: PUtf8String): boolean;
   UTF8StringArray = array of UTF8String;
+  InteractionID = (
+    iLanguageSlide,
+    iSongMenuSlide,
+    iTabsSlide,
+    iSortingSlide,
+    iShowScoresSlide,
+    iDebugSlide,
+    iAVDelaySlide,
+    iMicDelaySlide,
+    iBackButton
+  );
 
 function TScreenOptionsGame.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin
@@ -114,7 +125,7 @@ begin
         end;
       SDLK_RETURN:
         begin
-          if SelInteraction = 8 then
+          if SelInteraction = ord(iBackButton) then
             Leave;
         end;
       SDLK_DOWN:
@@ -123,26 +134,26 @@ begin
         InteractPrev;
       SDLK_RIGHT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 7) then
+          if Interactions[SelInteraction].Typ = iSelectS then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractInc;
           end;
           UpdateCalculatedSelectSlides(false);
-          if (SelInteraction = 0) then
+          if (SelInteraction = ord(iLanguageSlide)) then
           begin
             ReloadCurrentScreen;
           end;
         end;
       SDLK_LEFT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 7) then
+          if Interactions[SelInteraction].Typ = iSelectS then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractDec;
           end;
           UpdateCalculatedSelectSlides(false);
-          if (SelInteraction = 0) then
+          if (SelInteraction = ord(iLanguageSlide)) then
           begin
             ReloadCurrentScreen;
           end;
@@ -288,8 +299,8 @@ procedure TScreenOptionsGame.ReloadSongMenu;
 begin
   if (Ini.Sorting <> old_Sorting) or (Ini.Tabs <> old_Tabs) or (old_SongMenu <> Ini.SongMenu) then
   begin
-    Theme.ThemeSongLoad;
-
+    Ini.TabsAtStartup := Ini.Tabs;
+    Theme.ThemeSongReload;
     ScreenSong.Free;
     ScreenSong := TScreenSong.Create;
   end;
@@ -297,6 +308,7 @@ end;
 
 procedure TScreenOptionsGame.LoadWidgets;
 begin
+  // when editing this, also update the InteractionID enum declaration
   AddSelectSlide('SING_OPTIONS_GAME_LANGUAGE', Ini.Language, ILanguageTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_SONGMENU', Ini.SongMenu, ISongMenuTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_TABS', Ini.Tabs, ITabsTranslated);

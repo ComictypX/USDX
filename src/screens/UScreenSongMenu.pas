@@ -41,7 +41,6 @@ uses
   UMusic,
   UThemes,
   sdl2,
-  dglOpenGL,
   SysUtils;
 
 type
@@ -81,7 +80,6 @@ const
   SM_Refresh_Scores   = 64 or 6;
   SM_Song             = 64 or 8;
   SM_Medley           = 64 or 16;
-  SM_Extra            = 64 or 64;
   SM_Jukebox          = 64 or 128;
 
 var
@@ -106,9 +104,9 @@ uses
   UNote,
   UParty,
   UPlaylist,
+  URenderer,
   USong,
   USongs,
-  UTexture,
   UUnicodeUtils;
 
 function TScreenSongMenu.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
@@ -303,7 +301,7 @@ end;
 
 function TScreenSongMenu.Draw: boolean;
 begin
-  glClear(GL_DEPTH_BUFFER_BIT);
+  Renderer.ClearFrameBuffer(CLEAR_DEPTH);
   Result := inherited Draw;
 end;
 
@@ -362,7 +360,7 @@ begin
         Button[1].Visible := ((Length(PlaylistMedley.Song) > 0) or (CatSongs.Song[ScreenSong.Interaction].Medley.Source > msNone));
         Button[2].Visible := false;
         Button[3].Visible := true;
-        Button[4].Visible := true;
+        Button[4].Visible := false;
 
         SelectsS[0].Visible := false;
         SelectsS[1].Visible := false;
@@ -371,7 +369,6 @@ begin
         Button[0].Text[0].Text := Language.Translate('SONG_MENU_SONG');
         Button[1].Text[0].Text := Language.Translate('SONG_MENU_MEDLEY');
         Button[3].Text[0].Text := Language.Translate('SONG_MENU_REFRESH_SCORES');
-        Button[4].Text[0].Text := Language.Translate('SONG_MENU_EXTRA');
       end;
     SM_Song:
       begin
@@ -725,10 +722,6 @@ begin
 
         Button[0].Text[0].Text := Language.Translate('SONG_MENU_PLAY');
       end;
-    SM_Extra:
-      begin
-        ID := 'ID_020';
-      end;
     SM_Jukebox:
       begin
         ID := 'ID_021';
@@ -809,12 +802,6 @@ begin
               MenuShow(SM_Refresh_Scores);
               ScreenSong.StopMusicPreview();
               ScreenSong.StopVideoPreview();
-            end;
-          7: // button 5
-            begin
-              ScreenPopupError.ShowPopup(Language.Translate('PARTY_MODE_NOT_AVAILABLE'));
-              // show extras
-              //MenuShow(SM_Extra);
             end;
           end;
       end;
@@ -1065,7 +1052,6 @@ begin
               PlaylistMan.ReloadPlaylist(SelectValue3);
               PlaylistMan.SetPlayList(SelectValue3);
               Visible := false;
-              ScreenSong.SelectNext(false);
               ScreenSong.SetScrollRefresh;
             end;
         end;

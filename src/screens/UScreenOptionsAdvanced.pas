@@ -65,6 +65,19 @@ uses
   UUnicodeUtils,
   SysUtils;
 
+type
+  InteractionID = (
+    iScreenFadeSlide,
+    iEffectSingSlide,
+    iOnSongClickSlide,
+    iAskBeforeDelSlide,
+    iPartyPopupSlide,
+    iSingScoresSlide,
+    iDuetScoresSlide,
+    iTopScoresSlide,
+    iBackButton
+  );
+
 function TScreenOptionsAdvanced.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin
   Result := true;
@@ -94,7 +107,7 @@ begin
       end;
       SDLK_RETURN:
         begin
-          if SelInteraction = 8 then
+          if SelInteraction = ord(iBackButton) then
           begin
             Ini.Save;
             AudioPlayback.PlaySound(SoundLib.Back);
@@ -107,7 +120,7 @@ begin
         InteractPrev;
       SDLK_RIGHT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 7) then
+          if Interactions[SelInteraction].Typ = iSelectS then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractInc;
@@ -115,7 +128,7 @@ begin
         end;
       SDLK_LEFT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 7) then
+          if Interactions[SelInteraction].Typ = iSelectS then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
             InteractDec;
@@ -146,13 +159,14 @@ end;
 
 procedure TScreenOptionsAdvanced.LoadWidgets;
 begin
+  // when editing this, also update the InteractionID enum declaration
   AddSelectSlide('SING_OPTIONS_ADVANCED_SCREENFADE', Ini.ScreenFade, IScreenFadeTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_EFFECTSING', Ini.EffectSing, IEffectSingTranslated);
-  AddSelectSlide('SING_OPTIONS_GRAPHICS_LINEBONUS', Ini.LineBonus, ILineBonusTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_ONSONGCLICK', Ini.OnSongClick, IOnSongClickTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_ASKBEFOREDEL', Ini.AskBeforeDel, IAskbeforeDelTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_PARTYPOPUP', Ini.PartyPopup, IPartyPopupTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_SINGSCORES', Ini.SingScores, ISingScoresTranslated);
+  AddSelectSlide('SING_OPTIONS_ADVANCED_DUETSCORES', Ini.DuetScores, IDuetScoresTranslated);
   AddSelectSlide('SING_OPTIONS_ADVANCED_TOPSCORES', Ini.TopScores, ITopScoresTranslated);
 end;
 

@@ -43,10 +43,8 @@ uses
   UNote,
   UScreenScore,
   UScreenSingController,
-  UScreenTop5,
-  UTexture,
+  UScreenHighScores,
   UThemes,
-  dglOpenGL,
   SysUtils,
   sdl2,
   md5;
@@ -87,7 +85,7 @@ type
       APlayerColor: array of integer;
 
       PlayerAvatarButton: array of integer;
-      PlayerAvatarButtonMD5: array of UTF8String;
+
     public
       Goto_SingScreen: boolean; //If true then next Screen in SingScreen
       
@@ -99,7 +97,6 @@ type
       procedure OnShow; override;
       function Draw: boolean; override;
 
-      procedure SetAnimationProgress(Progress: real); override;
       procedure SetAvatarScroll;
       procedure SelectNext;
       procedure SelectPrev;
@@ -134,6 +131,7 @@ uses
   UMain,
   UMenuButton,
   UPath,
+  URenderer,
   USkins,
   USongs,
   UTime,
@@ -363,15 +361,20 @@ begin
           StopTextInput;
           Ini.Players := CountIndex;
           PlayersPlay:= UIni.IPlayersVals[CountIndex];
+          SetLength(Player, PlayersPlay);
 
           for I := 1 to PlayersPlay do
           begin
+            // TODO: is it really necessary for this screen to duplicate all these Ini. arrays?
             Ini.Name[I-1] := PlayerNames[I-1];
             Ini.PlayerColor[I-1] := Num[I-1];
             Ini.SingColor[I-1] := Num[I-1];
             Ini.PlayerLevel[I-1] := PlayerLevel[I-1];
+            // also set (some) of this info in the much easier to use Player variable
+            Player[I-1].Name := PlayerNames[I-1];
+            Player[I-1].Level := PlayerLevel[I-1];
 
-            Ini.PlayerAvatar[I-1] := PlayerAvatarButtonMD5[PlayerAvatars[I-1]];
+            Ini.PlayerAvatar[I-1] := AvatarsMD5[PlayerAvatars[I-1]];
 
             if (PlayerAvatars[I-1] = 0) then
             begin
@@ -386,7 +389,7 @@ begin
             else
             begin
               Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Int := 1;
-              AvatarPlayerTextures[I] := Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture;
+              AvatarPlayerTextures[I] := Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Clone();
             end;
 
           end;
@@ -402,8 +405,8 @@ begin
 
           // Reload ScreenSing and ScreenScore because of player colors
           // TODO: do this better  REALLY NECESSARY?
-          //ScreenScore.Free;
-          //ScreenSing.Free;
+          ScreenScore.Free;
+          ScreenSing.Free;
 
           ScreenScore := TScreenScore.Create;
           ScreenSing  := TScreenSingController.Create;
@@ -533,24 +536,21 @@ end;
 procedure TScreenName.GenerateAvatars();
 var
   I: integer;
-  AvatarTexture: TTexture;
   Avatar: TAvatar;
-  AvatarFile: IPath;
-  Hash: string;
 begin
 
   SetLength(PlayerAvatarButton, Length(AvatarsList) + 1);
-  SetLength(PlayerAvatarButtonMD5, Length(AvatarsList) + 1);
 
   // 1st no-avatar dummy
   for I := 1 to UIni.IMaxPlayerCount do
   begin
-    NoAvatarTexture[I] := Texture.GetTexture(Skin.GetTextureFileName('NoAvatar_P' + IntToStr(I)), TEXTURE_TYPE_TRANSPARENT, $FFFFFF);
+    NoAvatarTexture[I] := Renderer.GetTexture(Skin.GetTextureFileName('NoAvatar_P' + IntToStr(I)), TEXTURE_TYPE_TRANSPARENT, $FFFFFF);
   end;
 
   // create no-avatar
   PlayerAvatarButton[0] := AddButton(Theme.Name.PlayerAvatar);
-  Button[PlayerAvatarButton[0]].Texture := NoAvatarTexture[1];
+  Button[PlayerAvatarButton[0]].Texture.Free;
+  Button[PlayerAvatarButton[0]].Texture := NoAvatarTexture[1].Clone;
   Button[PlayerAvatarButton[0]].Selectable := false;
   Button[PlayerAvatarButton[0]].Selected := false;
   Button[PlayerAvatarButton[0]].Visible := false;
@@ -561,21 +561,13 @@ begin
     // create avatar
     PlayerAvatarButton[I] := AddButton(Theme.Name.PlayerAvatar);
 
-    AvatarFile := AvatarsList[I];
-
-    Hash := MD5Print(MD5File(AvatarFile.ToNative));
-    PlayerAvatarButtonMD5[I] := UpperCase(Hash);
-
-    // load avatar and cache its texture
-    Avatar := Avatars.FindAvatar(AvatarFile);
-    if (Avatar = nil) then
-      Avatar := Avatars.AddAvatar(AvatarFile);
+    // load avatar directly from its file
+    Avatar := Avatars.AddAvatar(AvatarsList[I]);
 
     if (Avatar <> nil) then
     begin
-      AvatarTexture := Avatar.GetTexture();
-      Button[PlayerAvatarButton[I]].Texture := AvatarTexture;
-
+      Button[PlayerAvatarButton[I]].Texture.Free;
+      Button[PlayerAvatarButton[I]].Texture := Avatar.GetTexture();
       Button[PlayerAvatarButton[I]].Selectable := false;
       Button[PlayerAvatarButton[I]].Selected := false;
       Button[PlayerAvatarButton[I]].Visible := false;
@@ -645,7 +637,8 @@ var
   Used: boolean;
 begin
   // no-avatar for current player
-  Button[PlayerAvatarButton[0]].Texture.TexNum := NoAvatarTexture[PlayerIndex + 1].TexNum;
+  Button[PlayerAvatarButton[0]].Texture.Free;
+  Button[PlayerAvatarButton[0]].Texture := NoAvatarTexture[PlayerIndex + 1].Clone();
 
   Button[PlayerName].Text[0].Text := PlayerNames[PlayerIndex];
 
@@ -844,7 +837,8 @@ begin
 
   if (PlayerAvatars[Player] = 0) then
   begin
-    Statics[PlayerCurrentAvatar[Player]].Texture := NoAvatarTexture[Player + 1];
+    Statics[PlayerCurrentAvatar[Player]].Texture.Free;
+    Statics[PlayerCurrentAvatar[Player]].Texture := NoAvatarTexture[Player + 1].Clone;
 
     Col := GetPlayerColor(Num[Player]);
 
@@ -853,7 +847,10 @@ begin
     Statics[PlayerCurrentAvatar[Player]].Texture.ColB := Col.B;
   end
   else
-    Statics[PlayerCurrentAvatar[Player]].Texture := Button[PlayerAvatarButton[PlayerAvatars[Player]]].Texture;
+  begin
+    Statics[PlayerCurrentAvatar[Player]].Texture.Free;
+    Statics[PlayerCurrentAvatar[Player]].Texture := Button[PlayerAvatarButton[PlayerAvatars[Player]]].Texture.Clone;
+  end;
 
   Statics[PlayerCurrentAvatar[Player]].Texture.X := Theme.Name.PlayerSelectAvatar[Player].X;
   Statics[PlayerCurrentAvatar[Player]].Texture.Y := Theme.Name.PlayerSelectAvatar[Player].Y;
@@ -878,7 +875,7 @@ begin
   begin
     PlayerNames[I] := Ini.Name[I];
     PlayerLevel[I] := Ini.PlayerLevel[I];
-    PlayerAvatars[I] := GetArrayIndex(PlayerAvatarButtonMD5, Ini.PlayerAvatar[I]);
+    PlayerAvatars[I] := GetArrayIndex(AvatarsMD5, Ini.PlayerAvatar[I]);
     // if it is -1 then the current saved md5 does not exist anymore (file has changed or was deleted entirely)
     // setting it to 0 just resets it to the colorized default avatar
     if (PlayerAvatars[I] = -1) then
@@ -1001,10 +998,6 @@ begin
 
   end;
 
-end;
-
-procedure TScreenName.SetAnimationProgress(Progress: real);
-begin
 end;
 
 procedure TScreenName.SelectNext;

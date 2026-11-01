@@ -49,7 +49,7 @@ uses
   UNote,
   UThemes,
   sdl2,
-  TextGL;
+  UText;
 
 type
 
@@ -61,21 +61,21 @@ type
       StaticR, StaticG, StaticB: TStatic;
       PointerR, PointerG, PointerB: TStatic;
       Sample: TStatic;
-      RGBSalt: real;
+      RGBSalt: single;
       Red, Green, Blue: integer;
 
-      function CreateStatic(X, Y, W, H, Z, ColR, ColG, ColB: real; const TexName: IPath): TStatic;
+      function CreateStatic(X, Y, W, H, Z, ColR, ColG, ColB: single; const TexName: IPath): TStatic;
 
     public
-      constructor Create(PosX, PosY: real; SelectR, SelectG, SelectB: TSelectSlide; Red, Green, Blue: integer);
+      constructor Create(PosX, PosY: single; SelectR, SelectG, SelectB: TSelectSlide; Red, Green, Blue: integer);
       destructor Destroy; override;
 
-      procedure SetX(PosX: real); override;
-      function GetX(): real; override;
-      procedure SetY(PosY: real); override;
-      function GetY(): real; override;
-      function GetW(): real; override;
-      function GetH(): real; override;
+      procedure SetX(PosX: single); override;
+      function GetX(): single; override;
+      procedure SetY(PosY: single); override;
+      function GetY(): single; override;
+      function GetW(): single; override;
+      function GetH(): single; override;
       procedure Draw; override;
       procedure SetColor(Color: TColor; Value: integer);
 
@@ -137,11 +137,26 @@ uses
   ULog,
   UMenuButton,
   USkins,
-  UTexture,
+  URenderer,
   UUnicodeUtils,
   SysUtils;
 
-constructor TLyricsColorPicker.Create(PosX, PosY: real; SelectR, SelectG, SelectB: TSelectSlide; Red, Green, Blue: integer);
+type
+  InteractionID = (
+    iFontSlide,
+    iStyleSlide,
+    iEffectSlide,
+    iAlphaSlide,
+    iLineSlide,
+    iPropertySlide,
+    iColorSlide,
+    iRedSlide,
+    iGreenSlide,
+    iBlueSlide,
+    iBackButton
+  );
+
+constructor TLyricsColorPicker.Create(PosX, PosY: single; SelectR, SelectG, SelectB: TSelectSlide; Red, Green, Blue: integer);
 begin
   self.SelectR := SelectR;
   self.SelectG := SelectG;
@@ -180,10 +195,10 @@ begin
   inherited;
 end;
 
-procedure TLyricsColorPicker.SetX(PosX: real);
+procedure TLyricsColorPicker.SetX(PosX: single);
 var
-  SelectX: real;
-  StaticX: real;
+  SelectX: single;
+  StaticX: single;
 begin
   Sample.Texture.X := PosX;
   SelectX := PosX + 150;
@@ -199,12 +214,12 @@ begin
   PointerB.Texture.X := StaticX;
 end;
 
-function TLyricsColorPicker.GetX(): real;
+function TLyricsColorPicker.GetX(): single;
 begin
   Result := Sample.Texture.X;
 end;
 
-procedure TLyricsColorPicker.SetY(PosY: real);
+procedure TLyricsColorPicker.SetY(PosY: single);
 begin
   Sample.Texture.Y := PosY;
   SelectR.Y := PosY;
@@ -219,24 +234,24 @@ begin
 
 end;
 
-function TLyricsColorPicker.GetY(): real;
+function TLyricsColorPicker.GetY(): single;
 begin
   Result := SelectR.Y;
 end;
 
-function TLyricsColorPicker.GetW(): real;
+function TLyricsColorPicker.GetW(): single;
 begin
   Result := SelectR.X + SelectR.W - Sample.Texture.X;
 end;
 
-function TLyricsColorPicker.GetH(): real;
+function TLyricsColorPicker.GetH(): single;
 begin
   Result := Sample.Texture.H;
 end;
 
-function TLyricsColorPicker.CreateStatic(X, Y, W, H, Z, ColR, ColG, ColB: real; const TexName: IPath): TStatic;
+function TLyricsColorPicker.CreateStatic(X, Y, W, H, Z, ColR, ColG, ColB: single; const TexName: IPath): TStatic;
 begin
-  Result := TStatic.Create(Texture.GetTexture(TexName, TEXTURE_TYPE_TRANSPARENT, 0));
+  Result := TStatic.Create(Renderer.GetTexture(TexName, TEXTURE_TYPE_TRANSPARENT, 0));
 
   // configures static
   Result.Texture.X := X;
@@ -274,7 +289,7 @@ var
   Stat: TStatic;
   Point: TStatic;
   Col: ^integer;
-  TexCol: ^real;
+  TexCol: ^single;
 begin
   case Color of
     colRed:
@@ -339,7 +354,7 @@ begin
         end;
       SDLK_RETURN:
         begin
-          if SelInteraction = 10 then
+          if SelInteraction = ord(iBackButton) then
           begin
             Ini.Save;
             AudioPlayback.PlaySound(SoundLib.Back);
@@ -352,11 +367,11 @@ begin
         InteractPrev;
       SDLK_RIGHT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 9) then
+          if (Interactions[SelInteraction].Typ = iSelectS) then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
 
-            if (SelInteraction >= 7) and (SelInteraction <= 9) then
+            if (InteractionID(SelInteraction) in [iRedSlide, iGreenSlide, iBlueSlide]) then
             begin
               if (SDL_ModState and (KMOD_LSHIFT or KMOD_RSHIFT) <> 0) and (SelectsS[SelInteraction].SelectOptInt <= 245) then
                 Salt_Mod := 9
@@ -402,11 +417,11 @@ begin
         end;
       SDLK_LEFT:
         begin
-          if (SelInteraction >= 0) and (SelInteraction <= 9) then
+          if (Interactions[SelInteraction].Typ = iSelectS) then
           begin
             AudioPlayback.PlaySound(SoundLib.Option);
 
-            if (SelInteraction >= 7) and (SelInteraction <= 9) then
+            if (InteractionID(SelInteraction) in [iRedSlide, iGreenSlide, iBlueSlide]) then
             begin
               if (SDL_ModState and (KMOD_LSHIFT or KMOD_RSHIFT) <> 0) and (SelectsS[SelInteraction].SelectOptInt >= 10) then
                 Salt_Mod := 9
@@ -480,7 +495,7 @@ procedure TScreenOptionsJukebox.InteractInc;
 begin
   inherited InteractInc;
 
-  if (SelInteraction = 1) then
+  if (SelInteraction = ord(iStyleSlide)) then
     UpdatePropertyList;
 
   RefreshSelectsColors;
@@ -490,7 +505,7 @@ procedure TScreenOptionsJukebox.InteractDec;
 begin
   inherited InteractDec;
 
-  if (SelInteraction = 1) then
+  if (SelInteraction = ord(iStyleSlide)) then
     UpdatePropertyList;
 
   RefreshSelectsColors;
@@ -526,7 +541,7 @@ begin
 
   end;
 
-  if (SelInteraction >= 7) and (SelInteraction <= 9) then
+  if (InteractionID(SelInteraction) in [iRedSlide, iGreenSlide, iBlueSlide]) then
   begin
     if (SelectsS[PropertySelect].SelectedOption = 1) then
       ChangeOtherOColor()
@@ -811,6 +826,7 @@ end;
 
 procedure TScreenOptionsJukebox.LoadWidgets;
 begin
+  // when editing this, also update the InteractionID enum declaration
   FontSelect := AddSelectSlide('SING_OPTIONS_LYRICS_FONT', Ini.JukeboxFont, FontFamilyNames);
   StyleSelect := AddSelectSlide('SING_OPTIONS_LYRICS_STYLE', Ini.JukeboxStyle, ILyricsStyleTranslated);
   AddSelectSlide('SING_OPTIONS_LYRICS_EFFECT', Ini.JukeboxEffect, ILyricsEffectTranslated);

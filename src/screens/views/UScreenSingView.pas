@@ -36,8 +36,7 @@ interface
 uses
   SysUtils,
   sdl2,
-  dglOpenGL,
-  TextGL,
+  UText,
   UCommon,
   UGraphicClasses,
   UHookableEvent,
@@ -47,9 +46,9 @@ uses
   UAvatars,
   UMenu,
   UMusic,
+  URenderer,
   USingScores,
   USongs,
-  UTexture,
   UThemes,
   UTime,
   USkins;
@@ -193,8 +192,11 @@ type
 
 
     constructor Create;
+    destructor Destroy; override;
 
     procedure DrawMedleyCountdown();
+    procedure DrawCountIn();
+    procedure DrawCountdown(timeDiff: real);
     function Draw: boolean;
 
     procedure SwapToScreen(Screen: integer);
@@ -319,7 +321,7 @@ begin
     maybeShow([StaticP1[0], StaticP1Avatar[0]]);
   end;
 
-  if (PlayersPlay = 2) or ((PlayersPlay = 4) and (Ini.Screens = 1)) then
+  if (PlayersPlay = 2) or ((PlayersPlay = 4) and (Screens = 2)) then
   begin
     if (Screen = 2) then
     begin
@@ -338,7 +340,7 @@ begin
     end;
   end;
 
-  if (PlayersPlay = 3) or ((PlayersPlay = 6) and (Ini.Screens = 1)) then
+  if (PlayersPlay = 3) or ((PlayersPlay = 6) and (Screens = 2)) then
   begin
     if (CurrentSong.isDuet) then
     begin
@@ -383,7 +385,7 @@ begin
   end;
 
   // 4 Players in 1 Screen
-  if (PlayersPlay = 4) and (Ini.Screens = 0) then
+  if (PlayersPlay = 4) and (Screens = 1) then
   begin
     if (CurrentSong.isDuet) then
     begin
@@ -406,7 +408,7 @@ begin
   end;
 
   // 6 Players in 1 Screen
-  if (PlayersPlay = 6) and (Ini.Screens = 0) then
+  if (PlayersPlay = 6) and (Screens = 1) then
   begin
     if (CurrentSong.isDuet) then
     begin
@@ -438,7 +440,6 @@ constructor TScreenSingView.Create;
 var
   Col: array [1..UIni.IMaxPlayerCount] of TRGB;
   I: integer;
-  Color: cardinal;
   procedure setColor(var avatarFrame: TThemeStatic; color: TRGB);
   begin
     avatarFrame.ColR := color.R;
@@ -461,7 +462,8 @@ var
   procedure assignAvatarStatic(var singPlayer: TThemeSingPlayer; var avatarStatic: integer; var texture: TTexture);
   begin
     avatarStatic := ScreenSing.AddStaticAlphaRectangle(singPlayer.Avatar);
-    ScreenSing.Statics[avatarStatic].Texture := texture;
+    if (texture <> nil) then
+      ScreenSing.Statics[avatarStatic].Texture := texture.clone();
     ScreenSing.Statics[avatarStatic].Texture.X := singPlayer.Avatar.X;
     ScreenSing.Statics[avatarStatic].Texture.Y := singPlayer.Avatar.Y;
     ScreenSing.Statics[avatarStatic].Texture.H := singPlayer.Avatar.H;
@@ -547,7 +549,7 @@ begin
     end
     else
     begin
-      ScreenSing.PlayerNames[I] := Ini.Name[I-1];
+      ScreenSing.PlayerNames[I] := Player[I-1].Name;
     end;
     ScreenSing.PlayerDuetNames[I] := ScreenSing.PlayerNames[I];
   end;
@@ -581,51 +583,7 @@ begin
   setColorAndAssignStatics(Theme.Sing.Duet6PP5, StaticP5DuetSixP, TextP5DuetSixP, Col[5]);
   setColorAndAssignStatics(Theme.Sing.Duet6PP6, StaticP6DuetSixP, TextP6DuetSixP, Col[6]);
 
-  // Sing Bars
-  // P1-6
-  for I := 1 to UIni.IMaxPlayerCount do
-  begin
-    Color := RGBFloatToInt(Col[I].R, Col[I].G, Col[I].B);
-
-	// Color := $002222; //light blue
-  // Color := $10000 * Round(0.22*255) + $100 * Round(0.39*255) + Round(0.64*255); //dark blue
-
-    Tex_Left[I]         := Texture.LoadTexture(Skin.GetTextureFileName('GrayLeft'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_Mid[I]          := Texture.LoadTexture(Skin.GetTextureFileName('GrayMid'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_Right[I]        := Texture.LoadTexture(Skin.GetTextureFileName('GrayRight'), TEXTURE_TYPE_COLORIZED, Color);
-
-    Tex_plain_Left[I]   := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainLeft'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_plain_Mid[I]    := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainMid'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_plain_Right[I]  := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainRight'), TEXTURE_TYPE_COLORIZED, Color);
-
-    Tex_BG_Left[I]      := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGLeft'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_BG_Mid[I]       := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGMid'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_BG_Right[I]     := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGRight'), TEXTURE_TYPE_COLORIZED, Color);
-
-    Tex_Left_Rap[I]         := Texture.LoadTexture(Skin.GetTextureFileName('GrayLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_Mid_Rap[I]          := Texture.LoadTexture(Skin.GetTextureFileName('GrayMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_Right_Rap[I]        := Texture.LoadTexture(Skin.GetTextureFileName('GrayRightRap'), TEXTURE_TYPE_COLORIZED, Color);
-
-    Tex_plain_Left_Rap[I]   := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_plain_Mid_Rap[I]    := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_plain_Right_Rap[I]  := Texture.LoadTexture(Skin.GetTextureFileName('NotePlainRightRap'), TEXTURE_TYPE_COLORIZED, Color);
-
-    Tex_BG_Left_Rap[I]      := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGLeftRap'),  TEXTURE_TYPE_COLORIZED, Color);
-    Tex_BG_Mid_Rap[I]       := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGMidRap'),   TEXTURE_TYPE_COLORIZED, Color);
-    Tex_BG_Right_Rap[I]     := Texture.LoadTexture(Skin.GetTextureFileName('NoteBGRightRap'), TEXTURE_TYPE_COLORIZED, Color);
-
-    //## backgrounds for the scores ##
-    Tex_ScoreBG[I - 1] := Texture.LoadTexture(Skin.GetTextureFileName('ScoreBG'), TEXTURE_TYPE_COLORIZED, Color);
-  end;
-
-  // Inversions of first player colors used to mark selected note in editor
-  Color := RGBFloatToInt(1 - Col[1].R, 1 - Col[1].G, 1 - Col[1].B);
-  Tex_Left_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayLeft'), TEXTURE_TYPE_COLORIZED, Color);
-  Tex_Mid_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayMid'), TEXTURE_TYPE_COLORIZED, Color);
-  Tex_Right_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayRight'), TEXTURE_TYPE_COLORIZED, Color);
-  Tex_Left_Rap_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayLeftRap'), TEXTURE_TYPE_COLORIZED, Color);
-  Tex_Mid_Rap_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayMidRap'), TEXTURE_TYPE_COLORIZED, Color);
-  Tex_Right_Rap_Inv := Texture.LoadTexture(Skin.GetTextureFileName('GrayRightRap'), TEXTURE_TYPE_COLORIZED, Color);
+  LoadSingScreenTextures(true);
 
   StaticPausePopup := ScreenSing.AddStatic(Theme.Sing.PausePopUp);
 
@@ -712,6 +670,12 @@ begin
   assignAvatarStatic(Theme.Sing.Duet3PP3, StaticDuetP3RAvatar[1]     , AvatarPlayerTextures[6]);
 end;
 
+destructor TScreenSingView.Destroy;
+begin
+  UnloadSingScreenTextures;
+  inherited;
+end;
+
 function TScreenSingView.Draw: boolean;
 var
   DisplayTime:            real;
@@ -722,9 +686,9 @@ var
   CurLyricsTime:          real;
   VideoFrameTime:         Extended;
   Line:                   TLyricLine;
+  LineDuet:               TLyricLine;
   medley_end:             boolean;
   medley_start_applause:  boolean;
-  LastLineSungToEnd:      boolean;
 begin
   ScreenSing.Background.Draw;
 
@@ -855,7 +819,7 @@ begin
   // retrieve time for timebar text
   case (ScreenSing.fTimebarMode) of
     tbmRemaining: begin
-      DisplayTime := TotalTime - CurLyricsTime;
+      DisplayTime := TotalTime - Max(CurLyricsTime, CurrentSong.Start);
       DisplayPrefix := '-';
     end;
     tbmTotal: begin
@@ -863,7 +827,7 @@ begin
       DisplayPrefix := '#';
     end;
     else begin       // current time
-      DisplayTime := CurLyricsTime;
+      DisplayTime := Max(CurLyricsTime, CurrentSong.Start);
       DisplayPrefix := '';
     end;
   end;
@@ -875,38 +839,12 @@ begin
   ScreenSing.Text[TextTimeText].Text := Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]);
   ScreenSing.Text[TextTimeText].Visible := ScreenSing.Settings.TimeBarVisible;
 
-  LastLineSungToEnd := false;
   //the song was sung to the end?
-  if not (ScreenSing.SungToEnd) and not(CurrentSong.isDuet) and not(ScreenSong.RapToFreestyle) then
+  if (not ScreenSing.SungToEnd) and (not ScreenSong.RapToFreestyle) then
   begin
-    Line := ScreenSing.Lyrics.GetUpperLine();
-    if Line.LastLine then
-    begin
-      LastLineSungToEnd := true;
-      for T := 0 to High(Line.Words) do
-      begin
-        if (CurLyricsTime < GetTimeFromBeat(Line.Words[T].Start + Line.Words[T].Length)) and
-           (not Line.Words[T].Freestyle) then
-          LastLineSungToEnd := false;
-      end;
-    end;
-    if LastLineSungToEnd then
-      ScreenSing.SungToEnd := true;
-  end
-  else
-  begin
-  {  Line := Lyrics.GetUpperLine();
-    LineDuet := LyricsDuet.GetUpperLine();
-    if Line.LastLine and (LineDuet.LastLine) then
-    begin
-      LastWord := Line.Words[Length(Line.Words)-1];
-      LastWordDuet := LineDuet.Words[Length(Line.Words)-1];
-      if (CurLyricsTime >= GetTimeFromBeat(LastWord.Start+LastWord.Length)) and (CurLyricsTime >= GetTimeFromBeat(LastWordDuet.Start+LastWordDuet.Length)) then
-        // TODO SAVE DUET SCORES
-        SungToEnd := false;
-        //SungToEnd := true;
-    end;
-    }
+    ScreenSing.SungToEnd := true;
+    for T := Low(CurrentSong.Tracks) to Min(PlayersPlay - 1, High(CurrentSong.Tracks)) do
+      ScreenSing.SungToEnd := ScreenSing.SungToEnd and (CurLyricsTime >= GetTimeFromBeat(CurrentSong.Tracks[T].HighestScoredBeat));
   end;
 
   // for medley-mode:
@@ -933,7 +871,7 @@ begin
       if (ScreenSing.ShowFinish) then
       begin
         // everything is setup, determine the current position
-        VideoFrameTime := CurrentSong.VideoGAP + LyricsState.GetCurrentTime();
+        VideoFrameTime := CurrentSong.VideoGAP + Max(LyricsState.GetCurrentTime(), CurrentSong.Start);
       end
       else
       begin
@@ -957,6 +895,8 @@ begin
   //Medley Countdown
   if ScreenSong.Mode = smMedley then
     DrawMedleyCountdown;
+  if ScreenSing.CountIn then
+    DrawCountIn;
 
   // check for music finish
   //Log.LogError('Check for music finish: ' + BoolToStr(Music.Finished) + ' ' + FloatToStr(LyricsState.CurrentTime*1000) + ' ' + IntToStr(CurrentSong.Finish));
@@ -1023,11 +963,6 @@ begin
 end;
 
 procedure TScreenSingView.DrawMedleyCountdown();
-var
-  w, h:           real;
-  timeDiff:       real;
-  t:              real;
-  CountDownText:  UTF8String;
 begin
   if AudioPlayback.Position < GetTimeFromBeat(CurrentSong.Medley.StartBeat) then
   begin
@@ -1038,22 +973,7 @@ begin
 
     ScreenSing.Statics[SongNameStatic].Visible := true;
     ScreenSing.Text[SongNameText].Visible := true;
-
-    timeDiff := GetTimeFromBeat(CurrentSong.Medley.StartBeat) - AudioPlayback.Position + 1;
-    t := frac(timeDiff);
-
-    glColor4f(0.15, 0.30, 0.6, t);
-
-    h := 300*t*ScreenH/RenderH;
-    SetFontFamily(0);
-    SetFontStyle(ftBoldHighRes);
-    SetFontItalic(false);
-    SetFontSize(h);
-    CountDownText := IntToStr(round(timeDiff-t));
-    w := glTextWidth(PChar(CountDownText));
-
-    SetFontPos (RenderW/2-w/2, RenderH/2-h/2);
-    glPrint(PChar(CountDownText));
+    DrawCountdown(GetTimeFromBeat(CurrentSong.Medley.StartBeat) - AudioPlayback.Position);
   end else
   begin
     if (ScreenSing.TextMedleyFadeOut = false) then
@@ -1064,6 +984,40 @@ begin
 
     MedleyTitleFadeOut;
   end;
+end;
+
+procedure TScreenSingView.DrawCountIn;
+var
+  Pos: real;
+begin
+  Pos := AudioPlayback.Position;
+  if (Pos > ScreenSing.FirstNote) then
+    ScreenSing.CountIn := false
+  else
+    DrawCountdown(ScreenSing.FirstNote - Pos);
+
+end;
+
+procedure TScreenSingView.DrawCountdown(timeDiff: real);
+var
+  t: real;
+  w, h: real;
+  CountDownText:  UTF8String;
+begin
+  t := frac(timeDiff);
+
+  h := 300*t*ScreenH/RenderH;
+  SetFontFamily(0);
+  SetFontStyle(ftBoldHighRes);
+  SetFontItalic(false);
+  SetFontSize(h);
+  SetFontColor(0.15, 0.30, 0.6, t);
+  CountDownText := IntToStr(round(timeDiff - t + 1));
+  w := TextWidth(PChar(CountDownText));
+
+  SetFontPos (RenderW/2-w/2, RenderH/2-h/2);
+  PrintText(PChar(CountDownText));
+
 end;
 
 procedure TScreenSingView.WriteMessage(msg: UTF8String);
@@ -1248,7 +1202,10 @@ var
   numLines:        integer;
 
   x, y, w, h:      real;
+  Col:            TRGB;
   CurrentTrack:    integer;
+  QuadList:        TQuadList;
+  NumQuads, I:     integer;
 begin
   x := Theme.Sing.StaticTimeProgress.x;
   y := Theme.Sing.StaticTimeProgress.y;
@@ -1259,27 +1216,34 @@ begin
   //calculate total singing beats of song
   if ScreenSong.Mode = smMedley then
   begin
-    SongStart := ScreenSing.MedleyStart * CurrentSong.BPM[0].BPM / 60;
-    SongEnd := ScreenSing.MedleyEnd * CurrentSong.BPM[0].BPM / 60;
+    SongStart := ScreenSing.MedleyStart * CurrentSong.BPM / 60;
+    SongEnd := ScreenSing.MedleyEnd * CurrentSong.BPM / 60;
   end
   else
   begin
-    SongStart := CurrentSong.BPM[0].BPM*CurrentSong.Start/60;
-    SongEnd := CurrentSong.BPM[0].BPM*TotalTime/60;
+    SongStart := CurrentSong.BPM*CurrentSong.Start/60;
+    SongEnd := CurrentSong.BPM*TotalTime/60;
   end;
   SongDuration := SongEnd - SongStart;
-  gapInBeats := CurrentSong.BPM[0].BPM*CurrentSong.GAP/1000/60;
+  gapInBeats := CurrentSong.BPM*CurrentSong.GAP/1000/60;
+
+  // Calculate number of quads to draw
+  NumQuads := 1; // progress indicator
+  for CurrentTrack := 0 to High(CurrentSong.Tracks) do
+    NumQuads := NumQuads + Length(CurrentSong.Tracks[CurrentTrack].Lines);
+  SetLength(QuadList, NumQuads);
+  I := 0;
+
   // draw sentence boxes
   for CurrentTrack := 0 to High(CurrentSong.Tracks) do //for P1 of duet or solo lyrics, P2 of duet,..
   begin
     numLines := Length(CurrentSong.Tracks[CurrentTrack].Lines); //Lyric lines
     //set color to player.color
     if (CurrentTrack = 0) then
-      glColor4f(GetLyricColor(Ini.SingColor[0]).R, GetLyricColor(Ini.SingColor[0]).G, GetLyricColor(Ini.SingColor[0]).B, 0.6)
+      Col := GetLyricColor(Ini.SingColor[0])
     else
-      glColor4f(GetLyricColor(Ini.SingColor[CurrentTrack]).R, GetLyricColor(Ini.SingColor[CurrentTrack]).G, GetLyricColor(Ini.SingColor[CurrentTrack]).B, 0.6);
+      Col := GetLyricColor(Ini.SingColor[CurrentTrack]);
 
-    glbegin(gl_quads);
     for LineIndex := 0 to numLines - 1 do
     begin
       if (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes = nil) then Continue;
@@ -1288,28 +1252,33 @@ begin
       br := (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].HighNote].StartBeat +
                 CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].HighNote].Duration -
                 CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[0].StartBeat) / SongDuration*w;  //br = last note of sentence position + its duration - first note of sentence position
-
-      //draw a square
-      glVertex2f(x+pos, y); //left top
-      glVertex2f(x+pos, y+h); //left bottom
-      glVertex2f(x+pos+br, y+h); //right bottom
-      glVertex2f(x+pos+br, y); //right top
+      QuadList[I].X := x+pos;
+      QuadList[I].Y := y;
+      QuadList[I].Z := 0;
+      QuadList[I].W := br;
+      QuadList[I].H := h;
+      QuadList[I].Gradient := gdNone;
+      QuadList[I].ColR := Col.R;
+      QuadList[I].ColG := Col.G;
+      QuadList[I].ColB := Col.B;
+      QuadList[I].Alpha := 0.6;
+      I := I + 1;
     end;
-    glEnd;
   end;
 
   // draw progress indicator
-  br := (gapInBeats + LyricsState.CurrentBeat - SongStart) / SongDuration*w;
-  glColor4f(Theme.Sing.StaticTimeProgress.ColR,
-             Theme.Sing.StaticTimeProgress.ColG,
-             Theme.Sing.StaticTimeProgress.ColB, 1); //Set Color
-  glBegin(GL_QUADS);
-  glVertex2f(x, y); // left top
-  glVertex2f(x, y+h); // left bottom
-  glVertex2f(x+br, y+h); // right bottom
-  glVertex2f(x+br, y); // right top
-  glEnd;
+  br := Max((gapInBeats + LyricsState.CurrentBeat - SongStart) / SongDuration*w, 0);
+  QuadList[I].X := x;
+  QuadList[I].Y := y;
+  QuadList[I].Z := 0;
+  QuadList[I].W := br;
+  QuadList[I].H := h;
+  QuadList[I].Gradient := gdNone;
+  QuadList[I].ColR := Theme.Sing.StaticTimeProgress.ColR;
+  QuadList[I].ColG := Theme.Sing.StaticTimeProgress.ColG;
+  QuadList[I].ColB := Theme.Sing.StaticTimeProgress.ColB;
+  QuadList[I].Alpha := 1;
+  Renderer.DrawQuads(QuadList);
 end;
 
 end.
-

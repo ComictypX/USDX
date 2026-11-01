@@ -70,3 +70,16 @@ ppaslink.sh
 /usdx-dlls-i686.zip
 /game/*.dll
 /game/*.debug
+AGENTS.md
+.claude/CLAUDE.md
+.claude/settings.json
+.claude/hooks/vexp-hint.sh
+.claude/hooks/vexp-restore.sh
+.claude/hooks/vexp-subagent.sh
+.codex/hooks.json
+.codex/vexp-hint.cmd
+.codex/vexp-hint.sh
+.github/copilot-instructions.md
+.vexp/.gitattributes
+.vexp/.gitignore
+.vexp/manifest.json
